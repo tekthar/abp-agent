@@ -166,6 +166,8 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
             ModelAlias = string.IsNullOrWhiteSpace(input.ModelAlias) ? "smart" : input.ModelAlias.Trim(),
             OfferAll = scope is null && input.OfferAll == true,
             OfferedTo = offered,
+            Tools = input.Tools ?? [],
+            TranscriptDays = input.TranscriptDays is > 0 and var days ? days : null,
             UpdatedBy = me,
         };
         await agentsDb.RunAsync(async db =>
