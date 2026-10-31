@@ -1,0 +1,84 @@
+namespace Toda.Agents;
+
+/// <summary>
+/// Who acts on an agents service (ADR 0091): the account, and the host's own principal for it (Toda's Casl ability),
+/// carried back to the host's seams. The package never reads the principal.
+/// </summary>
+public sealed record AgentActor(Guid Id, object? Principal = null);
+
+/// <summary>An account as the agents' pages show it: a person, a service account or an agent's.</summary>
+public sealed record AgentPerson(Guid Id, string Username, string DisplayName, bool IsActive)
+{
+    /// <summary><see cref="AgentPersonKinds"/>: what the account is, so pickers and history can tell an agent from a colleague.</summary>
+    public string Kind { get; init; } = AgentPersonKinds.Person;
+}
+
+public static class AgentPersonKinds
+{
+    public const string Person = "person";
+    public const string Service = "service";
+    public const string Agent = "agent";
+}
+
+/// <summary>
+/// The host's accounts (ADR 0091): an agent works through an account of its own, marked as an agent's, which never
+/// signs in and holds no tokens.
+/// </summary>
+public interface IAgentAccounts
+{
+    /// <summary>Makes an agent's account. Refused (with a message for the person) when the username is taken or isn't one.</summary>
+    Task<AgentPerson> CreateAsync(string username, string displayName, CancellationToken cancellationToken);
+
+    /// <summary>The accounts there are of these; missing ones are left out.</summary>
+    Task<IReadOnlyDictionary<Guid, AgentPerson>> GetManyAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken);
+}
+
+/// <summary>Who may administer what (ADR 0091). The default: nobody but those the host calls site admins, and no scopes.</summary>
+public interface IAgentRights
+{
+    /// <summary>Whether the actor administers the site: every agent, every run's transcript.</summary>
+    Task<bool> IsSiteAdminAsync(AgentActor actor, CancellationToken cancellationToken);
+
+    /// <summary>Whether the actor administers the scope: its own agents, and taking the site's on.</summary>
+    Task<bool> ManagesScopeAsync(AgentActor actor, Guid scopeId, CancellationToken cancellationToken);
+}
+
+/// <summary>A scope agents work in (a project, a marketplace), by its id and the key people know it by.</summary>
+public sealed record AgentScopeRef(Guid Id, string Key);
+
+/// <summary>
+/// The host's scopes (ADR 0091): agents are made for one, offered to them, and taken on by them with a role the agent's
+/// account gets there for the runs the system starts.
+/// </summary>
+public interface IAgentScopes
+{
+    /// <summary>The scope by its key, when the actor may read it; null otherwise.</summary>
+    Task<AgentScopeRef?> FindAsync(AgentActor actor, string key, CancellationToken cancellationToken);
+
+    /// <summary>The scopes of these ids there are, by id.</summary>
+    Task<IReadOnlyDictionary<Guid, AgentScopeRef>> GetManyAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken);
+
+    /// <summary>The scopes of these keys there are, by key as given; missing ones are left out.</summary>
+    Task<IReadOnlyDictionary<string, AgentScopeRef>> FindManyAsync(IEnumerable<string> keys, CancellationToken cancellationToken);
+
+    /// <summary>Why an agent can't be given this role in the scope (it doesn't exist, or administers the scope); null when it can.</summary>
+    Task<string?> CantGiveAsync(Guid scopeId, string roleKey, CancellationToken cancellationToken);
+
+    /// <summary>Gives the account the role in the scope.</summary>
+    Task GrantAsync(Guid scopeId, string roleKey, Guid accountId, Guid by, CancellationToken cancellationToken);
+
+    /// <summary>Takes back every role the account has in the scope.</summary>
+    Task RevokeAsync(Guid scopeId, Guid accountId, CancellationToken cancellationToken);
+}
+
+/// <summary>An entry in the host's audit log: what happened, to what, and the details.</summary>
+public interface IAgentAudit
+{
+    Task WriteAsync(string type, string targetType, Guid? targetId, string targetName, object? details, CancellationToken cancellationToken);
+}
+
+/// <summary>The site's state that holds agents: safe mode, where nothing runs on its own.</summary>
+public interface IAgentSite
+{
+    bool SafeMode { get; }
+}
