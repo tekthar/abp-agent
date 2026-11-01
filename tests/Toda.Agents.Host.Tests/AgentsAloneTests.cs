@@ -95,8 +95,13 @@ public sealed class AgentsAloneTests : IAsyncLifetime
             """);
         string ticket = await TicketAsync(Ben, "DESK", "Please help", fromCustomer: true);
 
-        JsonElement run = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Look" }));
-        Assert.True(run.GetProperty("outside").GetBoolean());
+        JsonElement waiting = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Look" }));
+        Assert.True(waiting.GetProperty("outside").GetBoolean());
+        JsonElement question = waiting.GetProperty("question");
+        Assert.Equal("set_priority", question.GetProperty("tool").GetString());
+        Assert.False(question.GetProperty("canAlways").GetBoolean());
+        await SendAsync(HttpMethod.Post, $"/api/agent-questions/{question.GetProperty("id").GetString()}/answer", Ben, new { answer = "refuse" });
+        JsonElement run = await FinishedAsync(waiting);
         Assert.Equal(["set_priority:refused"], Tools(run));
         JsonElement after = await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben);
         Assert.Equal("normal", after.GetProperty("priority").GetString());
@@ -114,8 +119,10 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         await TicketAsync(Ben, "OPS", "Elsewhere");
         string ticket = await TicketAsync(Ben, "DESK", "Here");
 
-        JsonElement run = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Look around" }));
-        Assert.True(run.GetProperty("wide").GetBoolean());
+        JsonElement waiting = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Look around" }));
+        Assert.True(waiting.GetProperty("wide").GetBoolean());
+        await SendAsync(HttpMethod.Post, $"/api/agent-questions/{waiting.GetProperty("question").GetProperty("id").GetString()}/answer", Ben, new { answer = "refuse" });
+        JsonElement run = await FinishedAsync(waiting);
         Assert.Equal(["list_desks:done", "set_priority:refused"], Tools(run));
         Assert.Equal("I looked elsewhere.", run.GetProperty("answer").GetString());
         Assert.Equal(0, (await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben)).GetProperty("notes").GetArrayLength());
@@ -136,8 +143,15 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         Assert.Contains("isn't a role an agent can have", await admin.Content.ReadAsStringAsync());
 
         string ticket = await TicketAsync(Ben, "DESK", "Ask first");
-        JsonElement run = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
-        Assert.Equal(["set_priority:refused"], Tools(run));
+        JsonElement waiting = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
+        string question = waiting.GetProperty("question").GetProperty("id").GetString()!;
+        JsonElement mine = await SendAsync(HttpMethod.Get, "/api/agent-questions", Ben);
+        Assert.Contains(mine.EnumerateArray(), q => q.GetProperty("id").GetString() == question);
+        Assert.False((await RawAsync(HttpMethod.Post, $"/api/agent-questions/{question}/answer", Cy, new { answer = "allow" })).IsSuccessStatusCode);
+        await SendAsync(HttpMethod.Post, $"/api/agent-questions/{question}/answer", Ben, new { answer = "allow" });
+        JsonElement run = await FinishedAsync(waiting);
+        Assert.True(Tools(run) is ["set_priority:done"], run.ToString());
+        Assert.Equal("high", (await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben)).GetProperty("priority").GetString());
 
         string elsewhere = await TicketAsync(Ben, "OPS", "Not taken on here");
         HttpResponseMessage notTaken = await RawAsync(HttpMethod.Post, $"/api/tickets/{elsewhere}/agent-runs", Ben, new { agentId = agent, prompt = "Go" });
@@ -239,6 +253,24 @@ public sealed class AgentsAloneTests : IAsyncLifetime
 
     private async Task<string> TicketAsync(string who, string desk, string title, bool fromCustomer = false) =>
         (await SendAsync(HttpMethod.Post, "/api/tickets", who, new { desk, title, body = "Details", fromCustomer })).GetProperty("key").GetString()!;
+
+    /// <summary>The run once it waits for an answer (or, if it doesn't ask, has ended).</summary>
+    private async Task<JsonElement> WaitingAsync(JsonElement run)
+    {
+        string id = run.GetProperty("id").GetString()!;
+        for (int i = 0; i < 150; i++)
+        {
+            JsonElement now = await SendAsync(HttpMethod.Get, $"/api/agent-runs/{id}", Ben);
+            if (now.GetProperty("state").GetString() is "waiting" or "done" or "failed" or "stopped")
+            {
+                return now;
+            }
+
+            await Task.Delay(200);
+        }
+
+        throw new TimeoutException($"The run {id} didn't ask.");
+    }
 
     /// <summary>The run once the package's worker has worked it to its end.</summary>
     private async Task<JsonElement> FinishedAsync(JsonElement run)

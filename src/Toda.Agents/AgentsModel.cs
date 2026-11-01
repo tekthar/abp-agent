@@ -21,6 +21,8 @@ public interface IAgentsDbContext : IEfCoreDbContext
     DbSet<AgentSettings> AgentSettings { get; }
     DbSet<AgentRun> AgentRuns { get; }
     DbSet<AgentRunStep> AgentRunSteps { get; }
+    DbSet<AgentQuestion> AgentQuestions { get; }
+    DbSet<AgentPermission> AgentPermissions { get; }
 }
 
 /// <summary>Runs the agents' work in a unit of work: the caller's when there is one, or a new one.</summary>
@@ -97,6 +99,7 @@ public static class AgentsModel
             b.Property(x => x.State).HasMaxLength(16).IsRequired();
             b.Property(x => x.Prompt).IsRequired();
             b.Property(x => x.Conversation).HasColumnType("jsonb");
+            b.Property(x => x.Paused).HasColumnType("jsonb");
             b.Property(x => x.Cost).HasPrecision(18, 6);
             b.HasIndex(x => new { x.AgentId, x.CreatedAt });
             b.HasIndex(x => new { x.ItemId, x.CreatedAt });
@@ -114,6 +117,29 @@ public static class AgentsModel
             b.Property(x => x.Target).HasMaxLength(64);
             b.Property(x => x.Outcome).HasMaxLength(16).IsRequired();
             b.HasIndex(x => new { x.RunId, x.Number }).IsUnique();
+        });
+
+        // Asking first (ADR 0086 step 6): runs' questions, and people's standing permissions.
+        builder.Entity<AgentQuestion>(b =>
+        {
+            b.ToTable("agent_questions", Schema);
+            b.Property(x => x.Id).ValueGeneratedNever();
+            b.Property(x => x.Tool).HasMaxLength(200).IsRequired();
+            b.Property(x => x.Target).HasMaxLength(64);
+            b.Property(x => x.Input).HasColumnType("jsonb").IsRequired();
+            b.Property(x => x.State).HasMaxLength(16).IsRequired();
+            b.Property(x => x.Answer).HasMaxLength(16);
+            b.HasIndex(x => new { x.AskedOf, x.State });
+            b.HasIndex(x => x.RunId);
+            b.HasIndex(x => new { x.State, x.ExpiresAt });
+        });
+
+        builder.Entity<AgentPermission>(b =>
+        {
+            b.ToTable("agent_permissions", Schema);
+            b.HasKey(x => new { x.PersonId, x.AgentId, x.Tool, x.ScopeId });
+            b.Property(x => x.Tool).HasMaxLength(200);
+            b.HasIndex(x => x.AgentId);
         });
     }
 

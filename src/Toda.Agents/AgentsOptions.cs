@@ -24,6 +24,9 @@ public class AgentsOptions
 
     public TimeSpan MaxTime { get; set; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>How long a run waits for an answer to its question before it's refused (ADR 0086 step 6).</summary>
+    public TimeSpan QuestionTimeout { get; set; } = TimeSpan.FromHours(24);
+
     /// <summary>What the agent's persona says it works in.</summary>
     public string ProductName { get; set; } = "Toda";
 

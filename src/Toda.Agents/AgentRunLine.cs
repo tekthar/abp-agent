@@ -49,5 +49,5 @@ public sealed class AgentRunLine(AgentsDb agentsDb, IAgentRunQueue queue, IAgent
     /// <summary>The agent's runs on the item that came before this one and haven't ended.</summary>
     internal static IQueryable<AgentRun> Ahead(IAgentsDbContext db, Guid runId, Guid agentId, Guid itemId, DateTime createdAt) =>
         db.AgentRuns.Where(r => r.AgentId == agentId && r.ItemId == itemId && r.Id != runId
-            && (r.State == AgentRunStates.Queued || r.State == AgentRunStates.Running) && r.CreatedAt <= createdAt);
+            && (r.State == AgentRunStates.Queued || r.State == AgentRunStates.Running || r.State == AgentRunStates.Waiting) && r.CreatedAt <= createdAt);
 }

@@ -153,4 +153,11 @@ public sealed record AgentRunFinished(Guid RunId, Guid AgentId, Guid AgentAccoun
 public interface IAgentEvents
 {
     Task RunFinishedAsync(AgentRunFinished finished, CancellationToken cancellationToken);
+
+    /// <summary>A run asked a person whether a tool may run, and waits (ADR 0086 step 6): tell them where they'll see it.</summary>
+    Task QuestionAskedAsync(AgentQuestionAsked asked, CancellationToken cancellationToken) => Task.CompletedTask;
 }
+
+/// <summary>A run's question: which, on what, of whom, about which tool and target.</summary>
+public sealed record AgentQuestionAsked(Guid QuestionId, Guid RunId, Guid AgentId, Guid AgentAccountId, Guid ScopeId, string? ItemKind, Guid? ItemId, Guid AskedOf,
+    string Tool, string? Target);

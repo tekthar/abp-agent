@@ -13,6 +13,8 @@ public sealed record TakeInput(string RoleKey);
 
 public sealed record AskInput(Guid AgentId, string Prompt);
 
+public sealed record AnswerInput(string Answer);
+
 /// <summary>
 /// The sample's API: the agents' switch, agents made for the site or a desk and taken on by desks, tickets, and runs on
 /// a ticket. Who's acting is the X-Account header (an account id): the sample has no sign-in, a real host has its own.
@@ -86,4 +88,11 @@ public class HelpDeskController(AgentService agents, AgentRunService runs, Sampl
 
     [HttpPost("agent-runs/{id:guid}/stop")]
     public Task<AgentRunInfo> Stop(Guid id, CancellationToken ct) => runs.StopAsync(Actor, id, ct);
+
+    /// <summary>The questions runs wait for me to answer.</summary>
+    [HttpGet("agent-questions")]
+    public Task<List<AgentQuestionInfo>> Questions(CancellationToken ct) => runs.QuestionsAsync(Actor, ct);
+
+    [HttpPost("agent-questions/{id:guid}/answer")]
+    public Task<AgentRunInfo> Answer(Guid id, [FromBody] AnswerInput input, CancellationToken ct) => runs.AnswerAsync(Actor, id, input.Answer, ct);
 }

@@ -30,7 +30,7 @@ public sealed record AgentTurn(bool Over, int Turns);
 /// Limits: turns, tool calls and time per run (<see cref="AgentsOptions"/>). Agents switched off, the agent paused, or
 /// safe mode stop it.
 /// </summary>
-public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRunLine line, IAgentModels models, IAgentTools tools, IAgentActingScope actingScope, IAgentSite site,
+public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRunLine line, IAgentEvents events, IAgentModels models, IAgentTools tools, IAgentActingScope actingScope, IAgentSite site,
     IServiceProvider services, IOptions<AgentsOptions> options, ILogger<AgentRunner> logger) : ITransientDependency
 {
     private const int MaxOutput = 50_000;
@@ -46,9 +46,9 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             (await db.AgentRuns.AsNoTracking().FirstAsync(r => r.Id == runId, cancellationToken),
                 await db.Agents.AsNoTracking().FirstAsync(a => a.Id == db.AgentRuns.Where(r => r.Id == runId).Select(r => r.AgentId).First(), cancellationToken)),
             cancellationToken: cancellationToken);
-        if (run.Ended)
+        if (run.Ended || run.State == AgentRunStates.Waiting)
         {
-            return new AgentTurn(true, run.Turns);
+            return new AgentTurn(true, run.Turns); // ended, or its question is open: the answer queues it again
         }
 
         if (await HeldAsync(run, agent, cancellationToken) is { } held)
@@ -69,6 +69,11 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         JsonArray messages = run.Conversation is { } kept ? JsonNode.Parse(kept)!.AsArray() : await FirstAsync(run, agent, item, cancellationToken);
         await NoteUnknownAsync(runId, messages, cancellationToken);
         List<AgentTool> offered = await OfferedAsync(agent, cancellationToken);
+        if (run.Paused is { } paused)
+        {
+            return await ResumeAsync(run, agent, item, offered, messages, JsonNode.Parse(paused)!.AsObject(), cancellationToken);
+        }
+
         JsonElement? toolsJson = offered.Count == 0 ? null
             : JsonSerializer.SerializeToElement(offered.Select(t => new { name = t.Name, description = t.Description, input_schema = t.InputSchema }));
 
@@ -99,37 +104,77 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             return new AgentTurn(true, run.Turns + 1);
         }
 
-        JsonArray results = [];
+        List<JsonNode> blocks = [.. (message["content"] as JsonArray ?? []).Where(b => (string?)b?["type"] == "tool_use").Select(b => b!.DeepClone())];
+        return await CallsAsync(run, agent, item, offered, messages, blocks, [], number, newTurn: true, cancellationToken);
+    }
+
+    /// <summary>
+    /// The turn's tool calls, in order, each with its result for the model. A call that must ask a person first stops
+    /// them: the run waits with the calls left and the results so far (<see cref="AgentRun.Paused"/>), and goes on from
+    /// there when it's answered.
+    /// </summary>
+    private async Task<AgentTurn> CallsAsync(AgentRun run, Agent agent, AgentItemRef? item, List<AgentTool> offered, JsonArray messages, List<JsonNode> blocks,
+        JsonArray results, int number, bool newTurn, CancellationToken ct)
+    {
+        int turns = run.Turns + (newTurn ? 1 : 0);
         int calls = 0;
-        foreach (JsonNode? block in message["content"] as JsonArray ?? [])
+        for (int i = 0; i < blocks.Count; i++)
         {
-            if ((string?)block?["type"] != "tool_use")
-            {
-                continue;
-            }
+            JsonNode block = blocks[i];
 
             // A stop asked for while the turn's calls ran ends the run before the next one.
-            if (await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == runId).Select(r => r.StopRequested).FirstAsync(cancellationToken),
-                    cancellationToken: cancellationToken))
+            if (await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == run.Id).Select(r => r.StopRequested).FirstAsync(ct), cancellationToken: ct))
             {
-                await SaveAsync(runId, messages, calls, cancellationToken);
-                await EndAsync(runId, AgentRunStates.Stopped, "Stopped.", null, cancellationToken);
-                return new AgentTurn(true, run.Turns + 1);
+                await SaveAsync(run.Id, messages, calls, ct, newTurn);
+                await EndAsync(run.Id, AgentRunStates.Stopped, "Stopped.", null, ct);
+                return new AgentTurn(true, turns);
             }
 
             calls++;
-            (string content, bool error) = await CallAsync(run, agent, item, offered, (string?)block["name"] ?? "", block["input"] ?? new JsonObject(), ++number,
-                cancellationToken);
-            results.Add(new JsonObject
+            Call call = await CallAsync(run, agent, item, offered, (string?)block["name"] ?? "", block["input"] ?? new JsonObject(), ++number, ct);
+            if (call.Question is { } question)
             {
-                ["type"] = "tool_result", ["tool_use_id"] = (string?)block["id"] ?? "", ["content"] = Cut(content), ["is_error"] = error,
-            });
+                JsonObject paused = new()
+                {
+                    ["question"] = question.ToString(), ["results"] = results.DeepClone(), ["blocks"] = new JsonArray([.. blocks.Skip(i).Select(b => b.DeepClone())]),
+                };
+                await SaveAsync(run.Id, messages, calls, ct, newTurn, paused.ToJsonString(), AgentRunStates.Waiting);
+                return new AgentTurn(true, turns);
+            }
+
+            results.Add(Result(block, call.Content, call.Error));
         }
 
         messages.Add(new JsonObject { ["role"] = "user", ["content"] = results });
-        await SaveAsync(runId, messages, calls, cancellationToken);
-        return new AgentTurn(false, run.Turns + 1);
+        await SaveAsync(run.Id, messages, calls, ct, newTurn, null, AgentRunStates.Running);
+        return new AgentTurn(false, turns);
     }
+
+    /// <summary>The run was answered: the call it asked about runs or is refused, then the turn's other calls go on.</summary>
+    private async Task<AgentTurn> ResumeAsync(AgentRun run, Agent agent, AgentItemRef? item, List<AgentTool> offered, JsonArray messages, JsonObject paused,
+        CancellationToken ct)
+    {
+        Guid questionId = Guid.Parse((string)paused["question"]!);
+        AgentQuestion question = await agentsDb.RunAsync(db => db.AgentQuestions.AsNoTracking().FirstAsync(q => q.Id == questionId, ct), cancellationToken: ct);
+        List<JsonNode> blocks = [.. paused["blocks"]!.AsArray().Select(b => b!.DeepClone())];
+        JsonArray results = paused["results"]!.DeepClone().AsArray();
+        JsonNode asked = blocks[0];
+        string name = (string?)asked["name"] ?? "";
+        AgentTool? tool = offered.FirstOrDefault(t => t.Name == name);
+        (string content, bool error) = question.State == AgentQuestionStates.Allowed && tool is not null
+            ? await RunToolAsync(run, agent, item, tool, asked["input"] ?? new JsonObject(), question.StepId, reads: false, ct)
+            : await RefuseAsync(question.StepId, question.State == AgentQuestionStates.Expired
+                ? $"No one answered in time, so {name} was not run."
+                : $"The person asked refused it, so {name} was not run. Don't try it another way.", ct);
+        results.Add(Result(asked, content, error));
+        int number = await NextStepAsync(run.Id, ct) - 1;
+        return await CallsAsync(run, agent, item, offered, messages, [.. blocks.Skip(1)], results, number, newTurn: false, ct);
+    }
+
+    private static JsonObject Result(JsonNode block, string content, bool error) => new()
+    {
+        ["type"] = "tool_result", ["tool_use_id"] = (string?)block["id"] ?? "", ["content"] = Cut(content), ["is_error"] = error,
+    };
 
     /// <summary>Ends a run the host's queue gave up on (its job failed or was cancelled), unless it has ended already.</summary>
     public async Task FailAsync(Guid runId, string why, CancellationToken cancellationToken)
@@ -207,9 +252,17 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     private async Task<List<AgentTool>> OfferedAsync(Agent agent, CancellationToken ct) =>
         [.. (await tools.ListAsync(ct)).Where(t => agent.Tools.GetValueOrDefault(t.Name) != AgentToolSettings.Off)];
 
-    /// <summary>One tool call: refused, or run with the run's rights under the agent's name, its step written before and after.</summary>
-    private async Task<(string Content, bool Error)> CallAsync(AgentRun run, Agent agent, AgentItemRef? item, List<AgentTool> offered, string name, JsonNode input,
-        int number, CancellationToken ct)
+    /// <summary>A call's result for the model, or the question it asked first.</summary>
+    private sealed record Call(string Content, bool Error, Guid? Question = null);
+
+    /// <summary>
+    /// One tool call, its step written before and after (ADR 0086 step 6). A read runs. A write runs where the agent's
+    /// settings say so, or the person who started the run allowed it for this run or always; otherwise, and always once
+    /// the run has read outside content or beyond its scope, it asks: the person who started the run, or the agent's
+    /// responsible person when the system did.
+    /// </summary>
+    private async Task<Call> CallAsync(AgentRun run, Agent agent, AgentItemRef? item, List<AgentTool> offered, string name, JsonNode input, int number,
+        CancellationToken ct)
     {
         AgentTool? tool = offered.FirstOrDefault(t => t.Name == name);
         // A plugin's tool counts as one that changes things, however it's marked, until plugins' own stores refuse an
@@ -217,20 +270,65 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         bool reads = tool is { ReadsOnly: true, FromPlugin: false };
         AgentRunStep step = new(Guid.NewGuid(), run.Id, number, "tool", Cut(name, 200), Cut(input.ToJsonString())) { Writes = !reads, Target = Target(input) };
         await StartStepAsync(step, ct);
-        var marks = await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == run.Id).Select(r => new { r.Outside, r.Wide }).FirstAsync(ct), cancellationToken: ct);
-        string? refused = tool is null ? $"{name} isn't one of your tools."
-            : reads ? null
-            : marks.Outside ? $"This run has read outside content (a customer's words or mail), so its changes ask a person first. {name} was not run."
-            : marks.Wide ? $"This run has read beyond its {ScopeNoun}, so its changes ask a person first. {name} was not run."
-            : agent.Tools.GetValueOrDefault(tool.Name) != AgentToolSettings.Run
-                ? $"{name} changes things, and this agent's settings say it asks first. {name} was not run: say what you would have done instead."
-                : null;
-        if (refused is not null)
+        if (tool is null)
         {
-            await FinishStepAsync(step.Id, AgentStepOutcomes.Refused, refused, ct);
-            return (refused, true);
+            string unknown = $"{name} isn't one of your tools.";
+            await FinishStepAsync(step.Id, AgentStepOutcomes.Refused, unknown, ct);
+            return new Call(unknown, true);
         }
 
+        if (!reads)
+        {
+            var marks = await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == run.Id).Select(r => new { r.Outside, r.Wide }).FirstAsync(ct), cancellationToken: ct);
+            string? why = marks.Outside ? "This run has read outside content (a customer's words or mail), so its changes ask a person first."
+                : marks.Wide ? $"This run has read beyond its {ScopeNoun}, so its changes ask a person first."
+                : agent.Tools.GetValueOrDefault(tool.Name) == AgentToolSettings.Run || await AllowedAsync(run, agent, tool.Name, step.Target, ct) ? null
+                : $"{name} changes things, and this agent's settings say it asks first.";
+            if (why is not null)
+            {
+                Guid question = await AskAsync(run, agent, step, why, ct);
+                return new Call("", false, question);
+            }
+        }
+
+        (string content, bool error) = await RunToolAsync(run, agent, item, tool, input, step.Id, reads, ct);
+        return new Call(content, error);
+    }
+
+    /// <summary>Whether the person who started the run let this tool run without asking: always, or for this run on this target.</summary>
+    private Task<bool> AllowedAsync(AgentRun run, Agent agent, string tool, string? target, CancellationToken ct) => agentsDb.RunAsync(async db =>
+        (run.StartedBy is { } person && await db.AgentPermissions.AnyAsync(p => p.PersonId == person && p.AgentId == agent.Id && p.Tool == tool && p.ScopeId == run.ScopeId, ct))
+        || await db.AgentQuestions.AnyAsync(q => q.RunId == run.Id && q.Tool == tool && q.Target == target && q.State == AgentQuestionStates.Allowed
+            && q.Answer == AgentAnswers.AllowRun, ct), cancellationToken: ct);
+
+    /// <summary>The run's question about the call, to whoever answers for the run; its step waits.</summary>
+    private async Task<Guid> AskAsync(AgentRun run, Agent agent, AgentRunStep step, string why, CancellationToken ct)
+    {
+        AgentQuestion question = new(Guid.NewGuid(), run.Id, step.Id, agent.Id, run.ScopeId, run.StartedBy ?? agent.ResponsibleId, step.Name, step.Target,
+            step.Input ?? "{}", options.Value.QuestionTimeout);
+        await agentsDb.RunAsync(async db =>
+        {
+            db.AgentQuestions.Add(question);
+            AgentRunStep tracked = await db.AgentRunSteps.FirstAsync(s => s.Id == step.Id, ct);
+            (tracked.Outcome, tracked.Output) = (AgentStepOutcomes.Asked, why);
+            await db.SaveChangesAsync(ct);
+        }, requiresNew: true, cancellationToken: ct);
+        await events.QuestionAskedAsync(new AgentQuestionAsked(question.Id, run.Id, agent.Id, agent.AccountId, run.ScopeId, run.ItemKind, run.ItemId,
+            question.AskedOf, question.Tool, question.Target), ct);
+        return question.Id;
+    }
+
+    private async Task<(string Content, bool Error)> RefuseAsync(Guid stepId, string why, CancellationToken ct)
+    {
+        await FinishStepAsync(stepId, AgentStepOutcomes.Refused, why, ct);
+        return (why, true);
+    }
+
+    /// <summary>Runs the tool with the run's rights under the agent's name, in its change set; its step finished after.</summary>
+    private async Task<(string Content, bool Error)> RunToolAsync(AgentRun run, Agent agent, AgentItemRef? item, AgentTool tool, JsonNode input, Guid stepId,
+        bool reads, CancellationToken ct)
+    {
+        string name = tool.Name;
         string content;
         bool error;
         try
@@ -252,10 +350,10 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             (content, error) = ($"{name} failed.", true);
         }
 
-        await FinishStepAsync(step.Id, error ? AgentStepOutcomes.Failed : AgentStepOutcomes.Done, content, ct);
+        await FinishStepAsync(stepId, error ? AgentStepOutcomes.Failed : AgentStepOutcomes.Done, content, ct);
         if (!error)
         {
-            await MarkAsync(run, item, tool!, input, content, ct);
+            await MarkAsync(run, item, tool, input, content, ct);
         }
 
         return (content, error);
@@ -435,14 +533,21 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         await db.SaveChangesAsync(ct);
     }, requiresNew: true, cancellationToken: ct);
 
-    private Task SaveAsync(Guid runId, JsonArray messages, int calls, CancellationToken ct) => agentsDb.RunAsync(async db =>
-    {
-        AgentRun run = await db.AgentRuns.FirstAsync(r => r.Id == runId, ct);
-        run.Conversation = messages.ToJsonString();
-        run.Turns++;
-        run.ToolCalls += calls;
-        await db.SaveChangesAsync(ct);
-    }, requiresNew: true, cancellationToken: ct);
+    private Task SaveAsync(Guid runId, JsonArray messages, int calls, CancellationToken ct, bool newTurn = true, string? paused = null, string? state = null) =>
+        agentsDb.RunAsync(async db =>
+        {
+            AgentRun run = await db.AgentRuns.FirstAsync(r => r.Id == runId, ct);
+            run.Conversation = messages.ToJsonString();
+            run.Turns += newTurn ? 1 : 0;
+            run.ToolCalls += calls;
+            run.Paused = paused;
+            if (state is not null && !run.Ended)
+            {
+                run.State = state;
+            }
+
+            await db.SaveChangesAsync(ct);
+        }, requiresNew: true, cancellationToken: ct);
 
     private async Task EndAsync(Guid runId, string state, string? error, string? answer, CancellationToken ct)
     {

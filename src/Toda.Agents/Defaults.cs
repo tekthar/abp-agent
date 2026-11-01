@@ -149,7 +149,7 @@ public sealed class AgentRunWorker(IServiceScopeFactory scopes, IAgentRunQueue q
                 SELECT * FROM agents.agent_runs r
                 WHERE "State" IN ('queued', 'running') AND ("LeasedUntil" IS NULL OR "LeasedUntil" < {now})
                   AND NOT EXISTS (SELECT 1 FROM agents.agent_runs a WHERE a."AgentId" = r."AgentId" AND a."ItemId" = r."ItemId" AND a."Id" <> r."Id"
-                    AND a."State" IN ('queued', 'running') AND a."CreatedAt" < r."CreatedAt")
+                    AND a."State" IN ('queued', 'running', 'waiting') AND a."CreatedAt" < r."CreatedAt")
                 ORDER BY "CreatedAt" LIMIT 1 FOR UPDATE SKIP LOCKED
                 """).AsNoTracking().Select(r => (Guid?)r.Id).ToListAsync(ct)).FirstOrDefault();
         if (id is { } taken)
@@ -201,4 +201,39 @@ public sealed class AgentTranscripts(IServiceScopeFactory scopes, IOptions<Agent
 public sealed class NoAgentEvents : IAgentEvents
 {
     public Task RunFinishedAsync(AgentRunFinished finished, CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+/// <summary>
+/// Questions no one answered in time (ADR 0086 step 6) are refused, and their runs go on with that: every few minutes on
+/// each server. Safe on several servers at once: a question is expired once.
+/// </summary>
+public sealed class AgentQuestionExpiry(IServiceScopeFactory scopes, ILogger<AgentQuestionExpiry> logger) : BackgroundService
+{
+    private static readonly TimeSpan Every = TimeSpan.FromMinutes(5);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await using AsyncServiceScope scope = scopes.CreateAsyncScope();
+                    await scope.ServiceProvider.GetRequiredService<AgentRunService>().ExpireQuestionsAsync(stoppingToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogWarning(ex, "Agents' questions past their time couldn't be refused this time; trying again later.");
+                }
+
+                await Task.Delay(Every, stoppingToken);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // The server is stopping.
+        }
+    }
 }

@@ -26,5 +26,6 @@ public class TodaAgentsModule : AbpModule
         context.Services.Configure<AgentsOptions>(context.Services.GetConfiguration().GetSection(AgentsOptions.Section));
         context.Services.AddHostedService<AgentRunWorker>();
         context.Services.AddHostedService<AgentTranscripts>();
+        context.Services.AddHostedService<AgentQuestionExpiry>();
     }
 }

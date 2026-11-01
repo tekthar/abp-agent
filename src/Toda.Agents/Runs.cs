@@ -107,6 +107,12 @@ public class AgentRun : Entity<Guid>
     /// <summary>Its transcript (the conversation, each step's input and output) was let go after the site's period.</summary>
     public bool TranscriptGone { get; set; }
 
+    /// <summary>
+    /// While it waits for an answer (ADR 0086 step 6): the turn's tool calls it hasn't made yet, the one it asked about
+    /// first, and the results so far (JSON), so it goes on from there once it's answered.
+    /// </summary>
+    public string? Paused { get; set; }
+
     public bool Ended => State is AgentRunStates.Done or AgentRunStates.Failed or AgentRunStates.Stopped;
 }
 
@@ -164,6 +170,9 @@ public static class AgentRunStates
 {
     public const string Queued = "queued";
     public const string Running = "running";
+
+    /// <summary>It asked a person whether a tool may run, and waits for the answer (ADR 0086 step 6).</summary>
+    public const string Waiting = "waiting";
     public const string Done = "done";
     public const string Failed = "failed";
     public const string Stopped = "stopped";
@@ -180,6 +189,9 @@ public static class AgentStepOutcomes
 
     /// <summary>A run stopped while it ran: whether it happened isn't known, and it isn't repeated.</summary>
     public const string Unknown = "unknown";
+
+    /// <summary>It asked a person first, and waits for the answer.</summary>
+    public const string Asked = "asked";
 }
 
 /// <summary>What starts a run (ADR 0086 section 3).</summary>
@@ -202,4 +214,123 @@ public static class AgentTriggers
 
     /// <summary>A workflow's step waits for the agent.</summary>
     public const string Workflow = "workflow";
+}
+
+/// <summary>
+/// A question an agent's run asks before a tool that changes things runs (ADR 0086 step 6): of the person who started the
+/// run, or of the agent's responsible person when the system did. The run waits; the answer lets the tool run once, for
+/// this run on the same target, always (for that person, agent, tool and scope), or refuses it. Unanswered in time, it's
+/// refused.
+/// </summary>
+public class AgentQuestion : Entity<Guid>
+{
+    protected AgentQuestion()
+    {
+    }
+
+    public AgentQuestion(Guid id, Guid runId, Guid stepId, Guid agentId, Guid scopeId, Guid askedOf, string tool, string? target, string input, TimeSpan expiresIn)
+        : base(id)
+    {
+        RunId = runId;
+        StepId = stepId;
+        AgentId = agentId;
+        ScopeId = scopeId;
+        AskedOf = askedOf;
+        Tool = tool;
+        Target = target;
+        Input = input;
+        CreatedAt = DateTime.UtcNow;
+        ExpiresAt = CreatedAt + expiresIn;
+    }
+
+    public Guid RunId { get; private set; }
+
+    /// <summary>The step that waits: the tool call it asks about.</summary>
+    public Guid StepId { get; private set; }
+
+    public Guid AgentId { get; private set; }
+
+    public Guid ScopeId { get; private set; }
+
+    /// <summary>Who it asks: the person who started the run, or the agent's responsible person.</summary>
+    public Guid AskedOf { get; private set; }
+
+    public string Tool { get; private set; } = "";
+
+    /// <summary>The item the call is about, by key, when it says.</summary>
+    public string? Target { get; private set; }
+
+    /// <summary>What the tool would be given (JSON).</summary>
+    public string Input { get; private set; } = "";
+
+    /// <summary><see cref="AgentQuestionStates"/>.</summary>
+    public string State { get; set; } = AgentQuestionStates.Open;
+
+    /// <summary>The answer: <see cref="AgentAnswers"/>.</summary>
+    public string? Answer { get; set; }
+
+    public Guid? AnsweredBy { get; set; }
+
+    public DateTime? AnsweredAt { get; set; }
+
+    public DateTime CreatedAt { get; private set; }
+
+    public DateTime ExpiresAt { get; private set; }
+}
+
+public static class AgentQuestionStates
+{
+    public const string Open = "open";
+    public const string Allowed = "allowed";
+    public const string Refused = "refused";
+
+    /// <summary>No one answered in time: refused.</summary>
+    public const string Expired = "expired";
+
+    /// <summary>The run ended before it was answered.</summary>
+    public const string Closed = "closed";
+}
+
+/// <summary>What a person answers an agent's question with.</summary>
+public static class AgentAnswers
+{
+    /// <summary>This call runs.</summary>
+    public const string Allow = "allow";
+
+    /// <summary>This tool runs on this target for the rest of the run, without asking again.</summary>
+    public const string AllowRun = "allow-run";
+
+    /// <summary>This tool runs for this agent in this scope whenever this person starts a run, without asking, until taken back.</summary>
+    public const string Always = "always";
+
+    public const string Refuse = "refuse";
+
+    public static readonly IReadOnlyList<string> All = [Allow, AllowRun, Always, Refuse];
+}
+
+/// <summary>A person's standing permission (ADR 0086 step 6): this agent may run this tool in this scope, in runs they start, without asking.</summary>
+public class AgentPermission
+{
+    protected AgentPermission()
+    {
+    }
+
+    public AgentPermission(Guid personId, Guid agentId, string tool, Guid scopeId)
+    {
+        PersonId = personId;
+        AgentId = agentId;
+        Tool = tool;
+        ScopeId = scopeId;
+        CreatedAt = DateTime.UtcNow;
+    }
+
+    public Guid PersonId { get; private set; }
+
+    public Guid AgentId { get; private set; }
+
+    public string Tool { get; private set; } = "";
+
+    public Guid ScopeId { get; private set; }
+
+    public DateTime CreatedAt { get; private set; }
 }
