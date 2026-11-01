@@ -63,6 +63,12 @@ public sealed record AgentStart(Guid AgentId, string ItemKind, Guid ItemId, stri
     /// the agent's responsible person, and no one's standing permissions apply to it.
     /// </summary>
     public Guid? ActorId { get; init; }
+
+    /// <summary>
+    /// Who outside the team started it, when someone did (a customer's mention; ADR 0086 section 7): the runs one sender
+    /// starts are capped per day (<see cref="AgentsOptions.MaxRunsPerSenderPerDay"/>).
+    /// </summary>
+    public Guid? Sender { get; init; }
 }
 
 /// <summary>An agent someone may ask about an item: one its scope took on, not paused.</summary>
@@ -159,19 +165,19 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
         }
 
         (AgentRun? run, string? why) = await CreateAsync(start.AgentId, item, start.Trigger, start.StartedBy, prompt, start.Cause, ct,
-            start.Exits is { Count: > 0 } exits ? [.. exits] : null, start.Chain, start.StartedBy is null ? start.ActorId : null);
+            start.Exits is { Count: > 0 } exits ? [.. exits] : null, start.Chain, start.StartedBy is null ? start.ActorId : null, start.Sender);
         return new AgentStartResult(run?.Id, why);
     }
 
     /// <summary>The run, made and queued; or why not.</summary>
     private async Task<(AgentRun? Run, string? Why)> CreateAsync(Guid agentId, AgentItemRef item, string trigger, Guid? startedBy, string prompt, string? cause,
-        CancellationToken ct, List<string>? exits = null, string? chain = null, Guid? actorId = null)
+        CancellationToken ct, List<string>? exits = null, string? chain = null, Guid? actorId = null, Guid? sender = null)
     {
-        (AgentRun? run, string? why) = await agentsDb.RunAsync<(AgentRun?, string?)>(async db =>
+        (AgentRun? run, string? why, AgentRunsCapped? capped) = await agentsDb.RunAsync<(AgentRun?, string?, AgentRunsCapped?)>(async db =>
         {
             if (!await agents.EnabledAsync(db, ct))
             {
-                return (null, agents.Off);
+                return (null, agents.Off, null);
             }
 
             Agent agent = await db.Agents.AsNoTracking().FirstOrDefaultAsync(a => a.Id == agentId, ct)
@@ -179,37 +185,56 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             if (!await db.AgentScopes.AnyAsync(p => p.AgentId == agent.Id && p.ScopeId == item.ScopeId, ct))
             {
                 string scope = (await scopes.GetManyAsync([item.ScopeId], ct)).GetValueOrDefault(item.ScopeId)?.Key ?? "Its scope";
-                return (null, $"{scope} hasn't taken {agent.Key} on.");
+                return (null, $"{scope} hasn't taken {agent.Key} on.", null);
             }
 
             if (agent.State == AgentStates.Paused)
             {
-                return (null, $"{agent.Key} is paused.");
+                return (null, $"{agent.Key} is paused.", null);
             }
 
             // An agent's own acts never start it again.
             if (startedBy == agent.AccountId)
             {
-                return (null, $"{agent.Key} started it itself.");
+                return (null, $"{agent.Key} started it itself.", null);
             }
 
             if (cause is not null && await db.AgentRuns.AnyAsync(r => r.AgentId == agent.Id && r.Cause == cause, ct))
             {
-                return (null, $"{agent.Key} has a run for that already.");
+                return (null, $"{agent.Key} has a run for that already.", null);
+            }
+
+            // A day's caps (ADR 0086 section 7): past them no run starts, the record waits for people, and the agent's
+            // responsible person hears of it.
+            AgentsOptions limits = options.Value;
+            DateTime day = DateTime.UtcNow.AddDays(-1);
+            string? cap = await db.AgentRuns.CountAsync(r => r.AgentId == agent.Id && r.CreatedAt > day, ct) >= limits.MaxRunsPerAgentPerDay ? "agent"
+                : sender is { } who && await db.AgentRuns.CountAsync(r => r.Sender == who && r.CreatedAt > day, ct) >= limits.MaxRunsPerSenderPerDay ? "sender"
+                : null;
+            if (cap is not null)
+            {
+                string over = cap == "agent"
+                    ? $"{agent.Key} has started the {limits.MaxRunsPerAgentPerDay} runs it may start in a day."
+                    : $"One sender from outside the team has started the {limits.MaxRunsPerSenderPerDay} runs a sender may start in a day.";
+                return (null, over, new AgentRunsCapped(agent.Id, agent.AccountId, agent.ResponsibleId, item.ScopeId, item.Kind, item.Id, cap, over));
             }
 
             await ForgetTranscriptsAsync(db, TranscriptDays, ct);
             AgentRun run = new(Guid.NewGuid(), agent.Id, item.ScopeId, item, trigger, startedBy, startedBy ?? actorId ?? agent.AccountId, prompt)
             {
-                Cause = cause, Exits = exits, Chain = chain,
+                Cause = cause, Exits = exits, Chain = chain, Sender = sender,
             };
             db.AgentRuns.Add(run);
             await db.SaveChangesAsync(ct);
-            return (run, null);
+            return (run, null, null);
         }, requiresNew: true, cancellationToken: ct); // committed before it's queued, even when the caller's change is still going (a workflow step's)
         if (run is not null)
         {
             await line.QueueAsync(run, $"Agent run on {item.Key}", ct);
+        }
+        else if (capped is not null)
+        {
+            await services.GetRequiredService<IAgentEvents>().RunsCappedAsync(capped, ct);
         }
 
         return (run, why);

@@ -47,6 +47,9 @@ public class AgentRun : Entity<Guid>
     /// <summary>Whose rights it uses: the person who started it, or the agent's own account when the system did.</summary>
     public Guid ActorId { get; private set; }
 
+    /// <summary>Who outside the team started it, when someone did (a customer's mention): their runs are capped per day.</summary>
+    public Guid? Sender { get; set; }
+
     /// <summary>What it was asked, in the starter's words.</summary>
     public string Prompt { get; private set; } = "";
 

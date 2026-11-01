@@ -27,6 +27,15 @@ public class AgentsOptions
     /// <summary>How long a run waits for an answer to its question before it's refused (ADR 0086 step 6).</summary>
     public TimeSpan QuestionTimeout { get; set; } = TimeSpan.FromHours(24);
 
+    /// <summary>
+    /// The runs one agent may start in a day, from every trigger (ADR 0086 section 7): past it, none starts and the record
+    /// waits for people, and the agent's responsible person hears of it. A bound until the full limits (step 7).
+    /// </summary>
+    public int MaxRunsPerAgentPerDay { get; set; } = 200;
+
+    /// <summary>The runs one sender from outside the team (a customer) may start in a day (ADR 0086 section 7).</summary>
+    public int MaxRunsPerSenderPerDay { get; set; } = 20;
+
     /// <summary>What the agent's persona says it works in.</summary>
     public string ProductName { get; set; } = "Toda";
 

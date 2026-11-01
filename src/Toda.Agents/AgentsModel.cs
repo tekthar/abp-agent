@@ -112,6 +112,7 @@ public static class AgentsModel
             b.HasIndex(x => x.ChangeSetId).IsUnique();
             b.HasIndex(x => new { x.State, x.LeasedUntil });
             b.HasIndex(x => new { x.AgentId, x.Cause });
+            b.HasIndex(x => new { x.Sender, x.CreatedAt }); // a sender's runs in a day (ADR 0086 section 7)
         });
 
         builder.Entity<AgentRunStep>(b =>

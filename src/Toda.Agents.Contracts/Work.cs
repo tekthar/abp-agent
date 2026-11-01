@@ -164,7 +164,13 @@ public interface IAgentEvents
 
     /// <summary>A run asked a person whether a tool may run, and waits (ADR 0086 step 6): tell them where they'll see it.</summary>
     Task QuestionAskedAsync(AgentQuestionAsked asked, CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>A run didn't start because a day's cap was reached (ADR 0086 section 7): tell the agent's responsible person, once a day.</summary>
+    Task RunsCappedAsync(AgentRunsCapped capped, CancellationToken cancellationToken) => Task.CompletedTask;
 }
+
+/// <summary>A day's cap stopped a run: which agent, whose it is to hear, on what, which cap ("agent" or "sender"), and why.</summary>
+public sealed record AgentRunsCapped(Guid AgentId, Guid AgentAccountId, Guid ResponsibleId, Guid ScopeId, string? ItemKind, Guid? ItemId, string Cap, string Why);
 
 /// <summary>A run's question: which, on what, of whom, about which tool and target.</summary>
 public sealed record AgentQuestionAsked(Guid QuestionId, Guid RunId, Guid AgentId, Guid AgentAccountId, Guid ScopeId, string? ItemKind, Guid? ItemId, Guid AskedOf,

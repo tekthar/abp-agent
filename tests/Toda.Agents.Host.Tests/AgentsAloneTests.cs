@@ -391,6 +391,33 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         Assert.Equal(0, (await SendAsync(HttpMethod.Get, "/api/me/agent-permissions", Admin)).GetArrayLength());
     }
 
+    [Fact]
+    public async Task A_days_caps_stop_an_agents_runs_and_one_outside_senders()
+    {
+        Limits(o => (o.MaxRunsPerAgentPerDay, o.MaxRunsPerSenderPerDay) = (3, 1));
+        string agent = await SetUpAgentAsync("capped", "demo-answer: Seen.");
+        string ticket = await TicketAsync(Ben, "DESK", "Many asks");
+        using IServiceScope scope = _factory!.Services.CreateScope();
+        AgentRunService runs = scope.ServiceProvider.GetRequiredService<AgentRunService>();
+        AgentItemRef item = (await scope.ServiceProvider.GetServices<IAgentItemKind>().First(k => k.Kind == "ticket").FindAsync(ticket, default))!;
+        AgentStart Start(string cause, Guid? sender = null) =>
+            new(Guid.Parse(agent), "ticket", item.Id, AgentTriggers.Mentioned, null, "Look", cause) { ActorId = Guid.Parse(Ben), Sender = sender };
+
+        // One sender from outside the team starts one run a day here; the next is refused.
+        Guid sender = Guid.Parse(Cy);
+        Assert.NotNull((await runs.StartAsync(Start("a", sender), default)).RunId);
+        AgentStartResult second = await runs.StartAsync(Start("b", sender), default);
+        Assert.Null(second.RunId);
+        Assert.Contains("a sender may start in a day", second.Why);
+
+        // The agent starts three a day in all; the fourth is refused, whoever starts it.
+        Assert.NotNull((await runs.StartAsync(Start("c"), default)).RunId);
+        Assert.NotNull((await runs.StartAsync(Start("d"), default)).RunId);
+        AgentStartResult fourth = await runs.StartAsync(Start("e"), default);
+        Assert.Null(fourth.RunId);
+        Assert.Contains("runs it may start in a day", fourth.Why);
+    }
+
     private static List<JsonElement> ToolSteps(JsonElement run) =>
         [.. run.GetProperty("steps").EnumerateArray().Where(s => s.GetProperty("kind").GetString() == "tool")];
 
