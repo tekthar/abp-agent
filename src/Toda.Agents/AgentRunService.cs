@@ -37,7 +37,11 @@ public sealed record AgentQuestionInfo(Guid Id, Guid RunId, string AgentKey, Age
 /// A run to start for a trigger: which agent, on which item, what started it, who (null for the system), what it's
 /// asked, and what caused it in the host's words, so the same cause starts one run.
 /// </summary>
-public sealed record AgentStart(Guid AgentId, string ItemKind, Guid ItemId, string Trigger, Guid? StartedBy, string Prompt, string? Cause = null);
+public sealed record AgentStart(Guid AgentId, string ItemKind, Guid ItemId, string Trigger, Guid? StartedBy, string Prompt, string? Cause = null)
+{
+    /// <summary>The exits a workflow's step lets the agent choose from, with its own tool <c>finish_step</c>.</summary>
+    public IReadOnlyList<string>? Exits { get; init; }
+}
 
 /// <summary>An agent someone may ask about an item: one its scope took on, not paused.</summary>
 public sealed record AskableAgent(Guid Id, string Key, AgentPerson Account, Dictionary<string, string> Names, Dictionary<string, string> Titles);
@@ -124,13 +128,14 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             return new AgentStartResult(null, $"Whoever started it can't read {item.Key}.");
         }
 
-        (AgentRun? run, string? why) = await CreateAsync(start.AgentId, item, start.Trigger, start.StartedBy, prompt, start.Cause, ct);
+        (AgentRun? run, string? why) = await CreateAsync(start.AgentId, item, start.Trigger, start.StartedBy, prompt, start.Cause, ct,
+            start.Exits is { Count: > 0 } exits ? [.. exits] : null);
         return new AgentStartResult(run?.Id, why);
     }
 
     /// <summary>The run, made and queued; or why not.</summary>
     private async Task<(AgentRun? Run, string? Why)> CreateAsync(Guid agentId, AgentItemRef item, string trigger, Guid? startedBy, string prompt, string? cause,
-        CancellationToken ct)
+        CancellationToken ct, List<string>? exits = null)
     {
         (AgentRun? run, string? why) = await agentsDb.RunAsync<(AgentRun?, string?)>(async db =>
         {
@@ -164,7 +169,7 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             }
 
             await ForgetTranscriptsAsync(db, TranscriptDays, ct);
-            AgentRun run = new(Guid.NewGuid(), agent.Id, item.ScopeId, item, trigger, startedBy, startedBy ?? agent.AccountId, prompt) { Cause = cause };
+            AgentRun run = new(Guid.NewGuid(), agent.Id, item.ScopeId, item, trigger, startedBy, startedBy ?? agent.AccountId, prompt) { Cause = cause, Exits = exits };
             db.AgentRuns.Add(run);
             await db.SaveChangesAsync(ct);
             return (run, null);

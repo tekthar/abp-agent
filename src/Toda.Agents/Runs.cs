@@ -56,6 +56,12 @@ public class AgentRun : Entity<Guid>
     /// </summary>
     public string? Cause { get; set; }
 
+    /// <summary>The exits a workflow's step lets the agent choose from (<c>finish_step</c>); null when it chooses none.</summary>
+    public List<string>? Exits { get; set; }
+
+    /// <summary>The exit the agent chose, if it did.</summary>
+    public string? Exit { get; set; }
+
     /// <summary><see cref="AgentRunStates"/>.</summary>
     public string State { get; set; } = AgentRunStates.Queued;
 

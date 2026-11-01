@@ -96,6 +96,12 @@ public static class AgentsModel
             b.Property(x => x.ItemKind).HasMaxLength(ItemKindLength);
             b.Property(x => x.Trigger).HasMaxLength(32).IsRequired();
             b.Property(x => x.Cause).HasMaxLength(200);
+            b.Property(x => x.Exits).HasColumnType("jsonb").HasConversion(
+                v => v == null ? null : JsonSerializer.Serialize(v, Json),
+                v => v == null ? null : JsonSerializer.Deserialize<List<string>>(v, Json),
+                new ValueComparer<List<string>?>((a, c) => JsonSerializer.Serialize(a, Json) == JsonSerializer.Serialize(c, Json),
+                    v => JsonSerializer.Serialize(v, Json).GetHashCode(), v => v == null ? null : v.ToList()));
+            b.Property(x => x.Exit).HasMaxLength(64);
             b.Property(x => x.State).HasMaxLength(16).IsRequired();
             b.Property(x => x.Prompt).IsRequired();
             b.Property(x => x.Conversation).HasColumnType("jsonb");

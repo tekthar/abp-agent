@@ -144,7 +144,11 @@ public interface IAgentRunQueue
 
 /// <summary>A run that ended: which, whose, on what, how it ended, and who started it (null for the system).</summary>
 public sealed record AgentRunFinished(Guid RunId, Guid AgentId, Guid AgentAccountId, Guid ScopeId, string? ItemKind, Guid? ItemId, string Trigger, string State,
-    Guid? StartedBy);
+    Guid? StartedBy)
+{
+    /// <summary>The exit the agent chose with <c>finish_step</c>, when the run was given exits.</summary>
+    public string? Exit { get; init; }
+}
 
 /// <summary>
 /// What the package tells its host as runs go (ADR 0086 step 4, ADR 0091): a run ended, so the host's rules can start on

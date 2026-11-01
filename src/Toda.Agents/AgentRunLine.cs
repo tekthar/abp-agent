@@ -39,7 +39,7 @@ public sealed class AgentRunLine(AgentsDb agentsDb, IAgentRunQueue queue, IAgent
             return (run, account, next);
         }, cancellationToken: ct);
         await events.RunFinishedAsync(new AgentRunFinished(run.Id, run.AgentId, account, run.ScopeId, run.ItemKind, run.ItemId, run.Trigger, run.State,
-            run.StartedBy), ct);
+            run.StartedBy) { Exit = run.Exit }, ct);
         if (next is not null)
         {
             await QueueAsync(next, "Agent run", ct);

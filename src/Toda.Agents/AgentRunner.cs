@@ -68,7 +68,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         AgentItemRef? item = await ItemAsync(run, cancellationToken);
         JsonArray messages = run.Conversation is { } kept ? JsonNode.Parse(kept)!.AsArray() : await FirstAsync(run, agent, item, cancellationToken);
         await NoteUnknownAsync(runId, messages, cancellationToken);
-        List<AgentTool> offered = await OfferedAsync(agent, cancellationToken);
+        List<AgentTool> offered = await OfferedAsync(run, agent, cancellationToken);
         if (run.Paused is { } paused)
         {
             return await ResumeAsync(run, agent, item, offered, messages, JsonNode.Parse(paused)!.AsObject(), cancellationToken);
@@ -248,9 +248,25 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         return [new JsonObject { ["role"] = "user", ["content"] = text.ToString() }];
     }
 
-    /// <summary>The host's tools the agent may use: not off in its settings.</summary>
-    private async Task<List<AgentTool>> OfferedAsync(Agent agent, CancellationToken ct) =>
-        [.. (await tools.ListAsync(ct)).Where(t => agent.Tools.GetValueOrDefault(t.Name) != AgentToolSettings.Off)];
+    /// <summary>The agent's own tool for choosing how a workflow's step ends (ADR 0086 step 4).</summary>
+    public const string FinishStep = "finish_step";
+
+    /// <summary>The host's tools the agent may use (not off in its settings), and finish_step when the run was given exits.</summary>
+    private async Task<List<AgentTool>> OfferedAsync(AgentRun run, Agent agent, CancellationToken ct)
+    {
+        List<AgentTool> offered = [.. (await tools.ListAsync(ct)).Where(t => agent.Tools.GetValueOrDefault(t.Name) != AgentToolSettings.Off)];
+        if (run.Exits is { Count: > 0 } exits)
+        {
+            offered.Add(new AgentTool(FinishStep, "Finish the step", $"Choose how the workflow's step ends: {string.Join(", ", exits)}. Call it once you know, then answer.",
+                JsonSerializer.SerializeToElement(new
+                {
+                    type = "object", required = new[] { "exit" },
+                    properties = new { exit = new { type = "string", @enum = exits }, why = new { type = "string" } },
+                }), ReadsOnly: true, FromPlugin: false, AgentToolReach.Inside));
+        }
+
+        return offered;
+    }
 
     /// <summary>A call's result for the model, or the question it asked first.</summary>
     private sealed record Call(string Content, bool Error, Guid? Question = null);
@@ -270,6 +286,19 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         bool reads = tool is { ReadsOnly: true, FromPlugin: false };
         AgentRunStep step = new(Guid.NewGuid(), run.Id, number, "tool", Cut(name, 200), Cut(input.ToJsonString())) { Writes = !reads, Target = Target(input) };
         await StartStepAsync(step, ct);
+        if (tool is { Name: FinishStep } && run.Exits is { Count: > 0 } exits)
+        {
+            string? exit = input is JsonObject o && o["exit"] is JsonValue v && v.TryGetValue(out string? chosen) && exits.Contains(chosen) ? chosen : null;
+            string said = exit is null ? $"The step's exits are {string.Join(", ", exits)}: choose one of them." : $"The step will end by \"{exit}\" when you answer.";
+            if (exit is not null)
+            {
+                await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == run.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.Exit, exit), ct), cancellationToken: ct);
+            }
+
+            await FinishStepAsync(step.Id, exit is null ? AgentStepOutcomes.Failed : AgentStepOutcomes.Done, said, ct);
+            return new Call(said, exit is null);
+        }
+
         if (tool is null)
         {
             string unknown = $"{name} isn't one of your tools.";
