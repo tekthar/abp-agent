@@ -64,7 +64,11 @@ public interface IAgentItemKind
 /// What a run is doing as it acts (ADR 0091): which run and change set, the agent's account, whose rights it uses, and
 /// whether this act may only read.
 /// </summary>
-public sealed record AgentActing(Guid RunId, Guid ChangeSetId, Guid AgentAccountId, Guid ActorId, bool ReadOnly);
+public sealed record AgentActing(Guid RunId, Guid ChangeSetId, Guid AgentAccountId, Guid ActorId, bool ReadOnly)
+{
+    /// <summary>The chain of automation the run is part of, as the host gave it when the run started; null when it gave none.</summary>
+    public string? Chain { get; init; }
+}
 
 /// <summary>
 /// Puts what a run does under the agent's name, with the run's rights, in its change set (ADR 0091): Toda sets who acts

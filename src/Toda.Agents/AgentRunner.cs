@@ -617,7 +617,8 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     private string ScopeNoun => options.Value.ScopeNoun;
 
     /// <summary>What the run does now: the run's rights, the agent's name, its change set.</summary>
-    private static AgentActing Acting(AgentRun run, Agent agent, bool readOnly) => new(run.Id, run.ChangeSetId, agent.AccountId, run.ActorId, readOnly);
+    private static AgentActing Acting(AgentRun run, Agent agent, bool readOnly) =>
+        new(run.Id, run.ChangeSetId, agent.AccountId, run.ActorId, readOnly) { Chain = run.Chain };
 
     /// <summary>Who the agent is, its instructions, and that what it reads is data.</summary>
     private string Persona(Agent agent, string noun)

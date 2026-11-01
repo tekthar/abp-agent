@@ -56,6 +56,13 @@ public class AgentRun : Entity<Guid>
     /// </summary>
     public string? Cause { get; set; }
 
+    /// <summary>
+    /// The chain of automation it's part of, in the host's own words (Toda's rules and agents), so what it does carries
+    /// the chain and a loop of rules and agents stops (ADR 0086 section 7). The package keeps it and hands it back with
+    /// each act (<see cref="AgentActing.Chain"/>); it never reads it.
+    /// </summary>
+    public string? Chain { get; set; }
+
     /// <summary>The exits a workflow's step lets the agent choose from (<c>finish_step</c>); null when it chooses none.</summary>
     public List<string>? Exits { get; set; }
 
