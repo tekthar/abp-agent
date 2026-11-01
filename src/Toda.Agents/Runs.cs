@@ -277,6 +277,7 @@ public class AgentQuestion : Entity<Guid>
 
     public Guid? AnsweredBy { get; set; }
 
+    /// <summary>When it was answered, or refused for want of an answer; the time from <see cref="CreatedAt"/> is the run's wait.</summary>
     public DateTime? AnsweredAt { get; set; }
 
     public DateTime CreatedAt { get; private set; }

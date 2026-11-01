@@ -299,7 +299,8 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             List<AgentRun> waiting = await db.AgentRuns.Where(r => ids.Contains(r.Id) && r.State == AgentRunStates.Waiting).ToListAsync(ct);
             foreach (AgentQuestion question in late)
             {
-                question.State = AgentQuestionStates.Expired;
+                // When it was refused for want of an answer: the run's waiting ends here, and doesn't count as its work.
+                (question.State, question.AnsweredAt) = (AgentQuestionStates.Expired, now);
             }
 
             foreach (AgentRun run in waiting)

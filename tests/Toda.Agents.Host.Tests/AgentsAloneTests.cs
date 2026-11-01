@@ -26,21 +26,22 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     private const string Cy = "00000000-0000-0000-0000-0000000000c1";
 
     private readonly string _database = "agents_host_" + Guid.NewGuid().ToString("N")[..12];
+    private WebApplicationFactory<Program>? _root;
     private WebApplicationFactory<Program>? _factory;
 
     public Task InitializeAsync()
     {
         // The host reads its settings as it builds, so they're the process's environment for this test.
         Environment.SetEnvironmentVariable("ConnectionStrings__Default", $"{Server};Database={_database}");
-        _factory = new WebApplicationFactory<Program>();
+        _root = _factory = new WebApplicationFactory<Program>();
         return Task.CompletedTask;
     }
 
     public async Task DisposeAsync()
     {
-        if (_factory is not null)
+        if (_root is not null)
         {
-            await _factory.DisposeAsync();
+            await _root.DisposeAsync(); // and the host a test gave other limits
         }
 
         NpgsqlConnection.ClearAllPools();
@@ -235,6 +236,55 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         JsonElement one = await FinishedAsync(first), two = await FinishedAsync(second);
         Assert.True(two.GetProperty("startedAt").GetDateTime() >= one.GetProperty("endedAt").GetDateTime(), $"{one} {two}");
     }
+
+    [Fact]
+    public async Task A_question_answered_after_the_runs_working_time_lets_it_go_on_since_waiting_isnt_work()
+    {
+        // Longer than the package's worker takes to pick the run up again (it looks every 5 seconds when idle).
+        Limits(o => o.MaxTime = TimeSpan.FromSeconds(8));
+        string agent = await SetUpAgentAsync("patient", """
+            demo: set_priority {"key":"$ticket","priority":"high"}
+            demo-answer: Set once you said so.
+            """, tools: new { set_priority = "ask" });
+        string ticket = await TicketAsync(Ben, "DESK", "Wait for me");
+
+        JsonElement waiting = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
+        await Task.Delay(TimeSpan.FromSeconds(9)); // longer than the run may work
+        await SendAsync(HttpMethod.Post, $"/api/agent-questions/{waiting.GetProperty("question").GetProperty("id").GetString()}/answer", Ben, new { answer = "allow" });
+        JsonElement run = await FinishedAsync(waiting);
+        Assert.True(run.GetProperty("state").GetString() == "done", run.ToString());
+        Assert.True(Tools(run) is ["set_priority:done"], run.ToString());
+        Assert.Equal("high", (await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben)).GetProperty("priority").GetString());
+    }
+
+    [Fact]
+    public async Task A_question_no_one_answers_is_refused_in_time_and_the_run_goes_on()
+    {
+        Limits(o => (o.MaxTime, o.QuestionTimeout) = (TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(1)));
+        string agent = await SetUpAgentAsync("unheard", """
+            demo: set_priority {"key":"$ticket","priority":"high"}
+            demo-answer: No one said, so I left it.
+            """, tools: new { set_priority = "ask" });
+        string ticket = await TicketAsync(Ben, "DESK", "Nobody home");
+
+        JsonElement waiting = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
+        await Task.Delay(TimeSpan.FromSeconds(9)); // past its time, and longer than the run may work
+        using (IServiceScope scope = _factory!.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<AgentRunService>().ExpireQuestionsAsync(default); // what the server's sweep does
+        }
+
+        JsonElement run = await FinishedAsync(waiting);
+        Assert.Equal("done", run.GetProperty("state").GetString());
+        Assert.True(Tools(run) is ["set_priority:refused"], run.ToString());
+        Assert.Contains("No one answered in time", run.GetProperty("steps").EnumerateArray().First(s => s.GetProperty("kind").GetString() == "tool")
+            .GetProperty("output").GetString());
+        Assert.Equal("normal", (await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben)).GetProperty("priority").GetString());
+    }
+
+    /// <summary>This test's host, with other agents' limits; set before its first request.</summary>
+    private void Limits(Action<AgentsOptions> limits) =>
+        _factory = _root!.WithWebHostBuilder(host => host.ConfigureServices(services => services.PostConfigure(limits)));
 
     /// <summary>Agents on, then a site agent offered to every desk, with these instructions and tools, taken on by DESK.</summary>
     private async Task<string> SetUpAgentAsync(string key, string instructions, object? tools = null)

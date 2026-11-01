@@ -58,7 +58,8 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         }
 
         AgentsOptions limits = options.Value;
-        if (run.Turns >= limits.MaxTurns || run.ToolCalls >= limits.MaxToolCalls || run.StartedAt is { } started && DateTime.UtcNow - started > limits.MaxTime)
+        if (run.Turns >= limits.MaxTurns || run.ToolCalls >= limits.MaxToolCalls
+            || run.StartedAt is { } started && await WorkedAsync(run.Id, started, cancellationToken) > limits.MaxTime)
         {
             string why = $"The run reached its limits ({limits.MaxTurns} turns, {limits.MaxToolCalls} tool calls, {limits.MaxTime.TotalMinutes:0} minutes) before it finished.";
             await EndAsync(runId, AgentRunStates.Failed, why, null, cancellationToken);
@@ -195,6 +196,23 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         {
             await line.EndedAsync(runId, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// How long the run has worked (ADR 0086 section 7): since it started, less the time its questions waited for an
+    /// answer, so a question answered the next day doesn't use up the run's time.
+    /// </summary>
+    private async Task<TimeSpan> WorkedAsync(Guid runId, DateTime started, CancellationToken ct)
+    {
+        TimeSpan since = DateTime.UtcNow - started;
+        if (since <= options.Value.MaxTime)
+        {
+            return since;
+        }
+
+        var waits = await agentsDb.RunAsync(db => db.AgentQuestions.AsNoTracking().Where(q => q.RunId == runId && q.AnsweredAt != null)
+            .Select(q => new { q.CreatedAt, q.AnsweredAt }).ToListAsync(ct), cancellationToken: ct);
+        return since - TimeSpan.FromTicks(waits.Sum(w => (w.AnsweredAt!.Value - w.CreatedAt).Ticks));
     }
 
     /// <summary>Why the run can't go on now, if it can't: stopped, agents off, the agent paused, safe mode.</summary>
