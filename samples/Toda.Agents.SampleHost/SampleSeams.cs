@@ -104,6 +104,8 @@ public sealed class SampleScopes(SampleDb sampleDb, SampleDirectory directory) :
 [ExposeServices(typeof(IAgentItemKind), typeof(TicketItems))]
 public sealed partial class TicketItems(SampleDb sampleDb, SampleDirectory directory) : IAgentItemKind, ITransientDependency
 {
+    private const int TimeoutMilliseconds = 1000;
+
     public const string ItemKind = "ticket";
 
     public string Kind => ItemKind;
@@ -122,8 +124,13 @@ public sealed partial class TicketItems(SampleDb sampleDb, SampleDirectory direc
 
     public async Task<AgentItemAccess> AccessAsync(AgentActor actor, AgentItemRef item, CancellationToken cancellationToken)
     {
-        Ticket ticket = await sampleDb.RunAsync(db => db.Tickets.AsNoTracking().FirstAsync(t => t.Id == item.Id, cancellationToken), cancellationToken);
-        bool staff = directory.Staffs(actor.Id, ticket.DeskId) || directory.IsAdmin(actor.Id);
+        (Ticket ticket, bool granted) = await sampleDb.RunAsync(async db =>
+        {
+            Ticket ticket = await db.Tickets.AsNoTracking().FirstAsync(t => t.Id == item.Id, cancellationToken);
+            return (ticket, await db.DeskGrants.AnyAsync(g => g.DeskId == ticket.DeskId && g.AccountId == actor.Id, cancellationToken));
+        }, cancellationToken);
+        // The desk's staff, an admin, or an agent the desk took on (its role there: what the system's runs work with).
+        bool staff = directory.Staffs(actor.Id, ticket.DeskId) || directory.IsAdmin(actor.Id) || granted;
         return new AgentItemAccess(staff || ticket.CreatedBy == actor.Id, staff, directory.IsAdmin(actor.Id), staff);
     }
 
@@ -147,7 +154,7 @@ public sealed partial class TicketItems(SampleDb sampleDb, SampleDirectory direc
         await db.SaveChangesAsync(cancellationToken);
     }, cancellationToken);
 
-    [GeneratedRegex(@"^[A-Za-z]+-[0-9]+$", RegexOptions.None, 1000)]
+    [GeneratedRegex(@"^[A-Za-z]+-[0-9]+$", RegexOptions.None, TimeoutMilliseconds)]
     private static partial Regex KeyShape();
 }
 
@@ -252,6 +259,8 @@ public sealed class SampleTools(SampleDb sampleDb, SampleDirectory directory, Ti
 /// </summary>
 public sealed partial class ScriptedModel : IAgentModels, ITransientDependency
 {
+    private const int TimeoutMilliseconds = 1000;
+
     public Task<AgentModelReply> CompleteAsync(AgentModelRequest request, CancellationToken cancellationToken)
     {
         List<(string Tool, string Input)> script = [.. Line().Matches(request.System).Select(m => (m.Groups["tool"].Value, m.Groups["input"].Value.Trim()))];
@@ -283,12 +292,12 @@ public sealed partial class ScriptedModel : IAgentModels, ITransientDependency
         return Task.FromResult(new AgentModelReply(JsonSerializer.SerializeToElement(message), "scripted", 10, 5, 0m));
     }
 
-    [GeneratedRegex(@"^demo: (?<tool>[a-z_]+) (?<input>\{.*\})\s*$", RegexOptions.Multiline, 1000)]
+    [GeneratedRegex(@"^demo: (?<tool>[a-z_]+) (?<input>\{.*\})\s*$", RegexOptions.Multiline, TimeoutMilliseconds)]
     private static partial Regex Line();
 
-    [GeneratedRegex(@"^demo-answer: (?<text>.+)$", RegexOptions.Multiline, 1000)]
+    [GeneratedRegex(@"^demo-answer: (?<text>.+)$", RegexOptions.Multiline, TimeoutMilliseconds)]
     private static partial Regex Answer();
 
-    [GeneratedRegex(@"<ticket key=""(?<key>[^""]+)"">", RegexOptions.None, 1000)]
+    [GeneratedRegex(@"<ticket key=""(?<key>[^""]+)"">", RegexOptions.None, TimeoutMilliseconds)]
     private static partial Regex TicketKey();
 }

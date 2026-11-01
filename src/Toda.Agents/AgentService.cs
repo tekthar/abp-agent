@@ -45,6 +45,8 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
 {
     public const int MaxInstructions = 20_000;
 
+    private const int TimeoutMilliseconds = 1000;
+
     public const string AgentsOff = "Agents are off on this site. A site admin turns them on in Administration, Agents.";
 
     public string OperatorOff =>
@@ -434,6 +436,6 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
         }.Where(c => c.Given).Select(c => c.Name),
     ];
 
-    [GeneratedRegex("^[a-z][a-z0-9-]{1,39}$", RegexOptions.None, 1000)]
+    [GeneratedRegex("^[a-z][a-z0-9-]{1,39}$", RegexOptions.None, TimeoutMilliseconds)]
     private static partial Regex KeyPattern();
 }

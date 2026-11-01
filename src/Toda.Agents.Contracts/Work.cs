@@ -141,3 +141,16 @@ public interface IAgentRunQueue
     /// <summary>Queues the run; the host's job id when it has one.</summary>
     Task<Guid?> EnqueueAsync(AgentRunWork work, CancellationToken cancellationToken);
 }
+
+/// <summary>A run that ended: which, whose, on what, how it ended, and who started it (null for the system).</summary>
+public sealed record AgentRunFinished(Guid RunId, Guid AgentId, Guid AgentAccountId, Guid ScopeId, string? ItemKind, Guid? ItemId, string Trigger, string State,
+    Guid? StartedBy);
+
+/// <summary>
+/// What the package tells its host as runs go (ADR 0086 step 4, ADR 0091): a run ended, so the host's rules can start on
+/// it and a workflow step waiting for it can move on. The default tells no one.
+/// </summary>
+public interface IAgentEvents
+{
+    Task RunFinishedAsync(AgentRunFinished finished, CancellationToken cancellationToken);
+}

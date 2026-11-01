@@ -146,8 +146,10 @@ public sealed class AgentRunWorker(IServiceScopeFactory scopes, IAgentRunQueue q
     {
         DateTime now = DateTime.UtcNow;
         Guid? id = (await db.AgentRuns.FromSqlInterpolated($"""
-                SELECT * FROM agents.agent_runs
+                SELECT * FROM agents.agent_runs r
                 WHERE "State" IN ('queued', 'running') AND ("LeasedUntil" IS NULL OR "LeasedUntil" < {now})
+                  AND NOT EXISTS (SELECT 1 FROM agents.agent_runs a WHERE a."AgentId" = r."AgentId" AND a."ItemId" = r."ItemId" AND a."Id" <> r."Id"
+                    AND a."State" IN ('queued', 'running') AND a."CreatedAt" < r."CreatedAt")
                 ORDER BY "CreatedAt" LIMIT 1 FOR UPDATE SKIP LOCKED
                 """).AsNoTracking().Select(r => (Guid?)r.Id).ToListAsync(ct)).FirstOrDefault();
         if (id is { } taken)
@@ -193,4 +195,10 @@ public sealed class AgentTranscripts(IServiceScopeFactory scopes, IOptions<Agent
             // The server is stopping.
         }
     }
+}
+
+/// <summary>The default: nobody is told a run ended.</summary>
+public sealed class NoAgentEvents : IAgentEvents
+{
+    public Task RunFinishedAsync(AgentRunFinished finished, CancellationToken cancellationToken) => Task.CompletedTask;
 }

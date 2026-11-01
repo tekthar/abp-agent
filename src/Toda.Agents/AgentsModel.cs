@@ -93,6 +93,7 @@ public static class AgentsModel
             b.Property(x => x.Id).ValueGeneratedNever();
             b.Property(x => x.ItemKind).HasMaxLength(ItemKindLength);
             b.Property(x => x.Trigger).HasMaxLength(32).IsRequired();
+            b.Property(x => x.Cause).HasMaxLength(200);
             b.Property(x => x.State).HasMaxLength(16).IsRequired();
             b.Property(x => x.Prompt).IsRequired();
             b.Property(x => x.Conversation).HasColumnType("jsonb");
@@ -101,6 +102,7 @@ public static class AgentsModel
             b.HasIndex(x => new { x.ItemId, x.CreatedAt });
             b.HasIndex(x => x.ChangeSetId).IsUnique();
             b.HasIndex(x => new { x.State, x.LeasedUntil });
+            b.HasIndex(x => new { x.AgentId, x.Cause });
         });
 
         builder.Entity<AgentRunStep>(b =>

@@ -20,6 +20,7 @@ public class TodaAgentsModule : AbpModule
         context.Services.TryAddTransient<IAgentAudit, LoggedAgentAudit>();
         context.Services.TryAddSingleton<IAgentSite, NoSafeMode>();
         context.Services.TryAddTransient<IAgentActingScope, NoActingScope>();
+        context.Services.TryAddTransient<IAgentEvents, NoAgentEvents>();
         context.Services.TryAddSingleton<AgentRunWorker.Signal>();
         context.Services.TryAddTransient<IAgentRunQueue, AgentRunWorkerQueue>();
         context.Services.Configure<AgentsOptions>(context.Services.GetConfiguration().GetSection(AgentsOptions.Section));

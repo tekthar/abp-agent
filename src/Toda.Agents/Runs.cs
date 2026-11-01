@@ -50,6 +50,12 @@ public class AgentRun : Entity<Guid>
     /// <summary>What it was asked, in the starter's words.</summary>
     public string Prompt { get; private set; } = "";
 
+    /// <summary>
+    /// What caused it, in the host's words ("comment:{id}"), so an event that comes twice starts one run: a run with the
+    /// same agent and cause isn't started again.
+    /// </summary>
+    public string? Cause { get; set; }
+
     /// <summary><see cref="AgentRunStates"/>.</summary>
     public string State { get; set; } = AgentRunStates.Queued;
 
@@ -176,7 +182,24 @@ public static class AgentStepOutcomes
     public const string Unknown = "unknown";
 }
 
+/// <summary>What starts a run (ADR 0086 section 3).</summary>
 public static class AgentTriggers
 {
+    /// <summary>A person asked the agent about an item.</summary>
     public const string Ask = "ask";
+
+    /// <summary>The item was assigned to the agent, by a person or a rule.</summary>
+    public const string Assigned = "assigned";
+
+    /// <summary>The agent was mentioned in a comment.</summary>
+    public const string Mentioned = "mentioned";
+
+    /// <summary>A rule's action asked the agent.</summary>
+    public const string Rule = "rule";
+
+    /// <summary>The agent's schedule.</summary>
+    public const string Schedule = "schedule";
+
+    /// <summary>A workflow's step waits for the agent.</summary>
+    public const string Workflow = "workflow";
 }

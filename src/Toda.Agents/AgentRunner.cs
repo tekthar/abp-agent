@@ -30,7 +30,7 @@ public sealed record AgentTurn(bool Over, int Turns);
 /// Limits: turns, tool calls and time per run (<see cref="AgentsOptions"/>). Agents switched off, the agent paused, or
 /// safe mode stop it.
 /// </summary>
-public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, IAgentModels models, IAgentTools tools, IAgentActingScope actingScope, IAgentSite site,
+public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRunLine line, IAgentModels models, IAgentTools tools, IAgentActingScope actingScope, IAgentSite site,
     IServiceProvider services, IOptions<AgentsOptions> options, ILogger<AgentRunner> logger) : ITransientDependency
 {
     private const int MaxOutput = 50_000;
@@ -132,15 +132,25 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, IAgentMo
     }
 
     /// <summary>Ends a run the host's queue gave up on (its job failed or was cancelled), unless it has ended already.</summary>
-    public Task FailAsync(Guid runId, string why, CancellationToken cancellationToken) => agentsDb.RunAsync(async db =>
+    public async Task FailAsync(Guid runId, string why, CancellationToken cancellationToken)
     {
-        AgentRun run = await db.AgentRuns.FirstAsync(r => r.Id == runId, cancellationToken);
-        if (!run.Ended)
+        bool ended = await agentsDb.RunAsync(async db =>
         {
+            AgentRun run = await db.AgentRuns.FirstAsync(r => r.Id == runId, cancellationToken);
+            if (run.Ended)
+            {
+                return false;
+            }
+
             (run.State, run.Error, run.EndedAt) = (AgentRunStates.Failed, why, DateTime.UtcNow);
             await db.SaveChangesAsync(cancellationToken);
+            return true;
+        }, requiresNew: true, cancellationToken: cancellationToken);
+        if (ended)
+        {
+            await line.EndedAsync(runId, cancellationToken);
         }
-    }, requiresNew: true, cancellationToken: cancellationToken);
+    }
 
     /// <summary>Why the run can't go on now, if it can't: stopped, agents off, the agent paused, safe mode.</summary>
     private async Task<(string State, string Why)?> HeldAsync(AgentRun run, Agent agent, CancellationToken ct)
@@ -434,12 +444,16 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, IAgentMo
         await db.SaveChangesAsync(ct);
     }, requiresNew: true, cancellationToken: ct);
 
-    private Task EndAsync(Guid runId, string state, string? error, string? answer, CancellationToken ct) => agentsDb.RunAsync(async db =>
+    private async Task EndAsync(Guid runId, string state, string? error, string? answer, CancellationToken ct)
     {
-        AgentRun run = await db.AgentRuns.FirstAsync(r => r.Id == runId, ct);
-        (run.State, run.Error, run.Answer, run.EndedAt) = (state, error, answer is null ? null : Cut(answer, 20_000), DateTime.UtcNow);
-        await db.SaveChangesAsync(ct);
-    }, requiresNew: true, cancellationToken: ct);
+        await agentsDb.RunAsync(async db =>
+        {
+            AgentRun run = await db.AgentRuns.FirstAsync(r => r.Id == runId, ct);
+            (run.State, run.Error, run.Answer, run.EndedAt) = (state, error, answer is null ? null : Cut(answer, 20_000), DateTime.UtcNow);
+            await db.SaveChangesAsync(ct);
+        }, requiresNew: true, cancellationToken: ct);
+        await line.EndedAsync(runId, ct);
+    }
 
     private async Task<AgentItemRef?> ItemAsync(AgentRun run, CancellationToken ct) =>
         run is { ItemKind: { } kind, ItemId: { } id } && Kind(kind) is { } items ? await items.GetAsync(id, ct) : null;

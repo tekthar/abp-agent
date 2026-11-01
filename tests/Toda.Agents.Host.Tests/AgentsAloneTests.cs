@@ -184,6 +184,44 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task The_system_starts_a_run_with_the_agents_own_role_once_per_cause_and_runs_wait_their_turn()
+    {
+        string agent = await SetUpAgentAsync("worker", """
+            demo: set_priority {"key":"$ticket","priority":"high"}
+            demo-answer: Done by the system.
+            """);
+        string ticket = await TicketAsync(Ben, "DESK", "Nightly");
+        using IServiceScope scope = _factory!.Services.CreateScope();
+        AgentRunService runs = scope.ServiceProvider.GetRequiredService<AgentRunService>();
+        AgentItemRef item = (await scope.ServiceProvider.GetServices<IAgentItemKind>().First(k => k.Kind == "ticket").FindAsync(ticket, default))!;
+
+        // No one started it: it works with the role DESK gave the agent, and the same cause starts it once.
+        AgentStartResult started = await runs.StartAsync(new AgentStart(Guid.Parse(agent), "ticket", item.Id, AgentTriggers.Schedule, null, "Nightly look", "night:1"), default);
+        AgentStartResult again = await runs.StartAsync(new AgentStart(Guid.Parse(agent), "ticket", item.Id, AgentTriggers.Schedule, null, "Nightly look", "night:1"), default);
+        Assert.NotNull(started.RunId);
+        Assert.Null(again.RunId);
+        Assert.Contains("has a run for that already", again.Why);
+        await FinishedAsync(await SendAsync(HttpMethod.Get, $"/api/agent-runs/{started.RunId}", Admin));
+        JsonElement run = await SendAsync(HttpMethod.Get, $"/api/agent-runs/{started.RunId}", Admin);
+        Assert.Equal("done", run.GetProperty("state").GetString());
+        Assert.Equal(JsonValueKind.Null, run.GetProperty("startedBy").ValueKind);
+        Assert.True(Tools(run) is ["set_priority:done"], run.ToString());
+        JsonElement change = (await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben)).GetProperty("changes")[0];
+        Assert.Equal(run.GetProperty("agent").GetProperty("id").GetString(), change.GetProperty("actorId").GetString());
+
+        // A person who can't read the ticket starts nothing.
+        AgentStartResult customer = await runs.StartAsync(new AgentStart(Guid.Parse(agent), "ticket", item.Id, AgentTriggers.Mentioned,
+            Guid.Parse("00000000-0000-0000-0000-0000000000d1"), "Look"), default);
+        Assert.Null(customer.RunId);
+
+        // Two asks on one ticket: the second begins once the first has ended.
+        JsonElement first = await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "One" });
+        JsonElement second = await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Two" });
+        JsonElement one = await FinishedAsync(first), two = await FinishedAsync(second);
+        Assert.True(two.GetProperty("startedAt").GetDateTime() >= one.GetProperty("endedAt").GetDateTime(), $"{one} {two}");
+    }
+
     /// <summary>Agents on, then a site agent offered to every desk, with these instructions and tools, taken on by DESK.</summary>
     private async Task<string> SetUpAgentAsync(string key, string instructions, object? tools = null)
     {

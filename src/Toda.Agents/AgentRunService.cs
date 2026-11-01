@@ -22,12 +22,21 @@ public sealed record AgentRunInfo(
     DateTime? EndedAt, bool Transcript, List<AgentRunStepInfo> Steps);
 
 /// <summary>
+/// A run to start for a trigger: which agent, on which item, what started it, who (null for the system), what it's
+/// asked, and what caused it in the host's words, so the same cause starts one run.
+/// </summary>
+public sealed record AgentStart(Guid AgentId, string ItemKind, Guid ItemId, string Trigger, Guid? StartedBy, string Prompt, string? Cause = null);
+
+/// <summary>The run started, or why none did.</summary>
+public sealed record AgentStartResult(Guid? RunId, string? Why);
+
+/// <summary>
 /// Agents' runs (ADR 0086 step 3, ADR 0091): "Ask an agent" on an item starts one as the person, with their rights, for
 /// an agent the item's scope took on; it runs in the background. Read by who may (the transcript by the person who
 /// started it and site admins), stopped by them and by whoever may change the item. A run's change set is the host's
 /// to undo.
 /// </summary>
-public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, IAgentRunQueue queue, IAgentAccounts accounts, IAgentRights rights,
+public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, AgentRunLine line, IAgentAccounts accounts, IAgentRights rights,
     IAgentScopes scopes, IServiceProvider services, IOptions<AgentsOptions> options) : ITransientDependency
 {
     public const int MaxPrompt = 8_000;
@@ -48,11 +57,55 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, IAge
         AgentItemRef item = await items.FindAsync(key, ct) is { } found && (await items.AccessAsync(actor, found, ct)).Read
             ? found
             : throw new Volo.Abp.Domain.Entities.EntityNotFoundException($"There's no {items.Noun} {key}.");
-        AgentRun run = await agentsDb.RunAsync(async db =>
+        (AgentRun? run, string? why) = await CreateAsync(agentId, item, AgentTriggers.Ask, actor.Id, prompt, null, ct);
+        if (run is null)
+        {
+            throw new UserFriendlyException(why!);
+        }
+
+        return await GetAsync(actor, run.Id, ct);
+    }
+
+    /// <summary>
+    /// Starts a run for a trigger (ADR 0086 step 4): an assignment, a mention, a rule, a schedule, a workflow step. A
+    /// person who started it lends the run their rights, and must be able to read the item; the system's runs use the
+    /// agent's own role in the item's scope. Nothing starts, and the reason comes back, when agents are off, the agent is
+    /// paused or not taken on there, the person can't read the item, the agent itself caused it, or a run with the same
+    /// cause was started already.
+    /// </summary>
+    public async Task<AgentStartResult> StartAsync(AgentStart start, CancellationToken ct)
+    {
+        string prompt = start.Prompt.Trim();
+        if (prompt.Length is 0)
+        {
+            return new AgentStartResult(null, "A run needs a request.");
+        }
+
+        prompt = prompt.Length > MaxPrompt ? prompt[..MaxPrompt] : prompt;
+        IAgentItemKind? items = Find(start.ItemKind);
+        if (items is null || await items.GetAsync(start.ItemId, ct) is not { } item)
+        {
+            return new AgentStartResult(null, $"There's no {start.ItemKind} {start.ItemId}.");
+        }
+
+        if (start.StartedBy is { } person && !(await items.AccessAsync(new AgentActor(person), item, ct)).Read)
+        {
+            return new AgentStartResult(null, $"Whoever started it can't read {item.Key}.");
+        }
+
+        (AgentRun? run, string? why) = await CreateAsync(start.AgentId, item, start.Trigger, start.StartedBy, prompt, start.Cause, ct);
+        return new AgentStartResult(run?.Id, why);
+    }
+
+    /// <summary>The run, made and queued; or why not.</summary>
+    private async Task<(AgentRun? Run, string? Why)> CreateAsync(Guid agentId, AgentItemRef item, string trigger, Guid? startedBy, string prompt, string? cause,
+        CancellationToken ct)
+    {
+        (AgentRun? run, string? why) = await agentsDb.RunAsync<(AgentRun?, string?)>(async db =>
         {
             if (!await agents.EnabledAsync(db, ct))
             {
-                throw new UserFriendlyException(agents.Off);
+                return (null, agents.Off);
             }
 
             Agent agent = await db.Agents.AsNoTracking().FirstOrDefaultAsync(a => a.Id == agentId, ct)
@@ -60,28 +113,37 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, IAge
             if (!await db.AgentScopes.AnyAsync(p => p.AgentId == agent.Id && p.ScopeId == item.ScopeId, ct))
             {
                 string scope = (await scopes.GetManyAsync([item.ScopeId], ct)).GetValueOrDefault(item.ScopeId)?.Key ?? "Its scope";
-                throw new UserFriendlyException($"{scope} hasn't taken {agent.Key} on.");
+                return (null, $"{scope} hasn't taken {agent.Key} on.");
             }
 
             if (agent.State == AgentStates.Paused)
             {
-                throw new UserFriendlyException($"{agent.Key} is paused.");
+                return (null, $"{agent.Key} is paused.");
+            }
+
+            // An agent's own acts never start it again.
+            if (startedBy == agent.AccountId)
+            {
+                return (null, $"{agent.Key} started it itself.");
+            }
+
+            if (cause is not null && await db.AgentRuns.AnyAsync(r => r.AgentId == agent.Id && r.Cause == cause, ct))
+            {
+                return (null, $"{agent.Key} has a run for that already.");
             }
 
             await ForgetTranscriptsAsync(db, TranscriptDays, ct);
-            AgentRun run = new(Guid.NewGuid(), agent.Id, item.ScopeId, item, AgentTriggers.Ask, actor.Id, actor.Id, prompt);
+            AgentRun run = new(Guid.NewGuid(), agent.Id, item.ScopeId, item, trigger, startedBy, startedBy ?? agent.AccountId, prompt) { Cause = cause };
             db.AgentRuns.Add(run);
             await db.SaveChangesAsync(ct);
-            return run;
+            return (run, null);
         }, cancellationToken: ct);
-
-        Guid? job = await queue.EnqueueAsync(new AgentRunWork(run.Id, $"Agent run on {item.Key}", actor.Id, item.ScopeId), ct);
-        if (job is not null)
+        if (run is not null)
         {
-            await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == run.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.JobId, job), ct), cancellationToken: ct);
+            await line.QueueAsync(run, $"Agent run on {item.Key}", ct);
         }
 
-        return await GetAsync(actor, run.Id, ct);
+        return (run, why);
     }
 
     /// <summary>A run, as the reader may see it; not found for anyone who may not.</summary>
@@ -166,6 +228,10 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, IAge
                 await db.SaveChangesAsync(ct);
             }
         }, cancellationToken: ct);
+        if (run.State == AgentRunStates.Queued)
+        {
+            await line.EndedAsync(id, ct);
+        }
         return await GetAsync(actor, id, ct);
     }
 
