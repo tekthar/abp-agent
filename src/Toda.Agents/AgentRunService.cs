@@ -27,6 +27,9 @@ public sealed record AgentRunInfo(
 /// </summary>
 public sealed record AgentStart(Guid AgentId, string ItemKind, Guid ItemId, string Trigger, Guid? StartedBy, string Prompt, string? Cause = null);
 
+/// <summary>An agent someone may ask about an item: one its scope took on, not paused.</summary>
+public sealed record AskableAgent(Guid Id, string Key, AgentPerson Account, Dictionary<string, string> Names, Dictionary<string, string> Titles);
+
 /// <summary>The run started, or why none did.</summary>
 public sealed record AgentStartResult(Guid? RunId, string? Why);
 
@@ -64,6 +67,22 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
         }
 
         return await GetAsync(actor, run.Id, ct);
+    }
+
+    /// <summary>The agents the actor may ask about the item: those its scope took on, not paused; none while agents are off.</summary>
+    public async Task<List<AskableAgent>> AskableAsync(AgentActor actor, string kind, string key, CancellationToken ct)
+    {
+        IAgentItemKind items = Kind(kind);
+        AgentItemRef item = await items.FindAsync(key, ct) is { } found && (await items.AccessAsync(actor, found, ct)).Read
+            ? found
+            : throw new Volo.Abp.Domain.Entities.EntityNotFoundException($"There's no {items.Noun} {key}.");
+        List<Agent> taken = await agentsDb.RunAsync(async db => await agents.EnabledAsync(db, ct)
+            ? await db.Agents.AsNoTracking().Where(a => a.State == AgentStates.On && db.AgentScopes.Any(s => s.AgentId == a.Id && s.ScopeId == item.ScopeId))
+                .OrderBy(a => a.Key).ToListAsync(ct)
+            : [], cancellationToken: ct);
+        IReadOnlyDictionary<Guid, AgentPerson> people = await accounts.GetManyAsync(taken.Select(a => a.AccountId), ct);
+        return [.. taken.Select(a => new AskableAgent(a.Id, a.Key, people.GetValueOrDefault(a.AccountId)
+            ?? new AgentPerson(a.AccountId, a.Key, a.Key, true) { Kind = AgentPersonKinds.Agent }, a.Names, a.Titles))];
     }
 
     /// <summary>
@@ -137,7 +156,7 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             db.AgentRuns.Add(run);
             await db.SaveChangesAsync(ct);
             return (run, null);
-        }, cancellationToken: ct);
+        }, requiresNew: true, cancellationToken: ct); // committed before it's queued, even when the caller's change is still going (a workflow step's)
         if (run is not null)
         {
             await line.QueueAsync(run, $"Agent run on {item.Key}", ct);
