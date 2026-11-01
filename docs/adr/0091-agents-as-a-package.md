@@ -80,6 +80,7 @@ makes sense.
 | `IAgentRunQueue` | work a run's turns in the background | the package's worker | Toda's jobs (`agents.run`) |
 | `IAgentAudit` | write an audit entry | the log | `ISecurityAudit` |
 | `IAgentSite` | is the site in safe mode | no | `TodaPlatformOptions.SafeMode` |
+| `IAgentTemplates` (step 10, planned) | the templates there are, and one by its key | none | plugins' manifests (`agents.template@1`) and the skills repository's `agents/` |
 
 Rules that hold for every host:
 
@@ -136,3 +137,8 @@ Each step lands on main with `e2e_agents.py` passing. The full CI runs at A4 and
 - The marketplace gets agents through the same contracts it already uses for workflows: a kind, a scope, a host's
   rights.
 - `IAgentReadCheck` is replaced by the item kind's answer of what keys bring in. Assets answer it for their keys.
+- **Amended 1 Nov, after the review of the steps built in the package** (docs/agents.md, "The review of 1 Nov"): the
+  contracts grew by addition only. `AgentStart` takes a host's own chain (`Chain`, handed back as `AgentActing.Chain`),
+  the change set of the act that caused it (`CausedInChangeSet`), whose rights a run no one started uses (`ActorId`),
+  and an outside sender (`Sender`); `IAgentEvents` tells of a day's cap (`RunsCappedAsync`); the package keeps four
+  more columns. What a host needs to do is in docs/toda-agents.md.
