@@ -50,6 +50,13 @@ public sealed record AgentStart(Guid AgentId, string ItemKind, Guid ItemId, stri
     /// is in that run's change set, never starts the agent again.
     /// </summary>
     public Guid? CausedInChangeSet { get; init; }
+
+    /// <summary>
+    /// Whose rights a run no person started uses, when not the agent's own role (ADR 0086 section 4): a rule's actor. The
+    /// run still counts as the system's for asking first (section 3): no one is there to answer, so its questions go to
+    /// the agent's responsible person, and no one's standing permissions apply to it.
+    /// </summary>
+    public Guid? ActorId { get; init; }
 }
 
 /// <summary>An agent someone may ask about an item: one its scope took on, not paused.</summary>
@@ -132,9 +139,9 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             return new AgentStartResult(null, $"There's no {start.ItemKind} {start.ItemId}.");
         }
 
-        if (start.StartedBy is { } person && !(await items.AccessAsync(new AgentActor(person), item, ct)).Read)
+        if ((start.StartedBy ?? start.ActorId) is { } lender && !(await items.AccessAsync(new AgentActor(lender), item, ct)).Read)
         {
-            return new AgentStartResult(null, $"Whoever started it can't read {item.Key}.");
+            return new AgentStartResult(null, $"{(start.StartedBy is null ? "Whose rights it would use" : "Whoever started it")} can't read {item.Key}.");
         }
 
         // An agent's own acts never start it again (ADR 0086 section 3): what its runs do is in their change sets, and its
@@ -146,13 +153,13 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
         }
 
         (AgentRun? run, string? why) = await CreateAsync(start.AgentId, item, start.Trigger, start.StartedBy, prompt, start.Cause, ct,
-            start.Exits is { Count: > 0 } exits ? [.. exits] : null, start.Chain);
+            start.Exits is { Count: > 0 } exits ? [.. exits] : null, start.Chain, start.StartedBy is null ? start.ActorId : null);
         return new AgentStartResult(run?.Id, why);
     }
 
     /// <summary>The run, made and queued; or why not.</summary>
     private async Task<(AgentRun? Run, string? Why)> CreateAsync(Guid agentId, AgentItemRef item, string trigger, Guid? startedBy, string prompt, string? cause,
-        CancellationToken ct, List<string>? exits = null, string? chain = null)
+        CancellationToken ct, List<string>? exits = null, string? chain = null, Guid? actorId = null)
     {
         (AgentRun? run, string? why) = await agentsDb.RunAsync<(AgentRun?, string?)>(async db =>
         {
@@ -186,7 +193,7 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             }
 
             await ForgetTranscriptsAsync(db, TranscriptDays, ct);
-            AgentRun run = new(Guid.NewGuid(), agent.Id, item.ScopeId, item, trigger, startedBy, startedBy ?? agent.AccountId, prompt)
+            AgentRun run = new(Guid.NewGuid(), agent.Id, item.ScopeId, item, trigger, startedBy, startedBy ?? actorId ?? agent.AccountId, prompt)
             {
                 Cause = cause, Exits = exits, Chain = chain,
             };

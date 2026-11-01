@@ -282,6 +282,42 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         Assert.Equal("normal", (await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben)).GetProperty("priority").GetString());
     }
 
+    [Fact]
+    public async Task A_run_no_one_started_can_lend_a_persons_rights_and_asks_the_agents_responsible_person()
+    {
+        string agent = await SetUpAgentAsync("lent", """
+            demo: set_priority {"key":"$ticket","priority":"high"}
+            demo-answer: Done with Ben's rights.
+            """, tools: new { set_priority = "ask" });
+        string ticket = await TicketAsync(Ben, "DESK", "A rule's work");
+        using IServiceScope scope = _factory!.Services.CreateScope();
+        AgentRunService runs = scope.ServiceProvider.GetRequiredService<AgentRunService>();
+        AgentItemRef item = (await scope.ServiceProvider.GetServices<IAgentItemKind>().First(k => k.Kind == "ticket").FindAsync(ticket, default))!;
+
+        // A rule's run: Ben's rights, but no one is there to answer, so the agent's responsible person (the admin who made it) is asked.
+        AgentStartResult started = await runs.StartAsync(new AgentStart(Guid.Parse(agent), "ticket", item.Id, AgentTriggers.Rule, null, "Set it", "rule:1")
+        {
+            ActorId = Guid.Parse(Ben),
+        }, default);
+        JsonElement waiting = await WaitingAsync(await SendAsync(HttpMethod.Get, $"/api/agent-runs/{started.RunId}", Admin));
+        JsonElement asked = await SendAsync(HttpMethod.Get, $"/api/agent-runs/{started.RunId}", Admin);
+        Assert.Equal(JsonValueKind.Null, asked.GetProperty("startedBy").ValueKind);
+        JsonElement question = asked.GetProperty("question");
+        Assert.Equal(Admin, question.GetProperty("askedOf").GetProperty("id").GetString());
+        Assert.False(question.GetProperty("canAlways").GetBoolean());
+        await SendAsync(HttpMethod.Post, $"/api/agent-questions/{question.GetProperty("id").GetString()}/answer", Admin, new { answer = "allow" });
+        await FinishedAsync(waiting);
+        JsonElement change = (await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben)).GetProperty("changes")[0];
+        Assert.Equal(Ben, change.GetProperty("actorId").GetString());
+
+        // Lent by someone who can't read the ticket, it doesn't start.
+        AgentStartResult customer = await runs.StartAsync(new AgentStart(Guid.Parse(agent), "ticket", item.Id, AgentTriggers.Rule, null, "Look", "rule:2")
+        {
+            ActorId = Guid.Parse("00000000-0000-0000-0000-0000000000d1"),
+        }, default);
+        Assert.Null(customer.RunId);
+    }
+
     /// <summary>This test's host, with other agents' limits; set before its first request.</summary>
     private void Limits(Action<AgentsOptions> limits) =>
         _factory = _root!.WithWebHostBuilder(host => host.ConfigureServices(services => services.PostConfigure(limits)));
