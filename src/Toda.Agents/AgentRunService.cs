@@ -8,7 +8,11 @@ namespace Toda.Agents;
 
 /// <summary>A run's step as its reader may see it: its input and output only for those who may read the transcript.</summary>
 public sealed record AgentRunStepInfo(int Number, string Kind, string Name, string? Target, string Outcome, string? Input, string? Output, DateTime StartedAt,
-    DateTime? EndedAt);
+    DateTime? EndedAt)
+{
+    /// <summary>What let a call that changes things run (<see cref="AgentAllowances"/>): its settings, someone's standing permission, an answer.</summary>
+    public string? Allowed { get; init; }
+}
 
 /// <summary>
 /// A run (ADR 0086 step 3): which agent, on what, who started it, its state, whether it read outside content or beyond
@@ -27,8 +31,10 @@ public sealed record AgentRunInfo(
 
 /// <summary>
 /// A run's question (ADR 0086 step 6): the tool, its target, what it would be given (for whoever is asked or reads the
-/// transcript), why it asks, whom, until when, and whether the reader may answer it. "Always" is offered only where
-/// it means something: a person's own run that hasn't read outside content or beyond its scope.
+/// transcript), why it asks, whom, until when, and whether the reader may answer it. "Always" is offered only where undo
+/// could repair a mistake and nothing outside could have prompted it: a tool of the host's own (not a plugin's, which
+/// may send or call out), in a run that hasn't read outside content or beyond its scope; in a person's own run, to that
+/// person, and in a run the system started, to whoever asked who may change the agent's settings.
 /// </summary>
 public sealed record AgentQuestionInfo(Guid Id, Guid RunId, string AgentKey, AgentPerson? Agent, string? ItemKind, string? ItemKey, string Tool, string? Target,
     string? Input, string Why, AgentPerson? AskedOf, DateTime CreatedAt, DateTime ExpiresAt, bool CanAnswer, bool CanAlways);
@@ -72,7 +78,7 @@ public sealed record AgentStartResult(Guid? RunId, string? Why);
 /// to undo.
 /// </summary>
 public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, AgentRunLine line, IAgentAccounts accounts, IAgentRights rights,
-    IAgentScopes scopes, IServiceProvider services, IOptions<AgentsOptions> options) : ITransientDependency
+    IAgentScopes scopes, IAgentAudit audit, IServiceProvider services, IOptions<AgentsOptions> options) : ITransientDependency
 {
     public const int MaxPrompt = 8_000;
 
@@ -243,13 +249,29 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             answer ? run.Answer : null, run.Error, run.CreatedAt, run.StartedAt, run.EndedAt, transcript && !run.TranscriptGone,
             seesSteps
                 ? [.. steps.Select(x => new AgentRunStepInfo(x.Number, x.Kind, x.Name, x.Target, x.Outcome, transcript ? x.Input : null, transcript ? x.Output : null,
-                    x.StartedAt, x.EndedAt))]
+                    x.StartedAt, x.EndedAt) { Allowed = x.Allowed })]
                 : [])
         {
             Question = question is null || !(seesSteps || question.AskedOf == actor.Id) ? null
-                : Info(question, run, agent, item?.Key, people, actor, transcript || question.AskedOf == actor.Id, steps.FirstOrDefault(s => s.Id == question.StepId)?.Output),
+                : Info(question, run, agent, item?.Key, people, actor, transcript || question.AskedOf == actor.Id, steps.FirstOrDefault(s => s.Id == question.StepId)?.Output,
+                    await MayAlwaysAsync(actor, question, run, agent, await OwnToolsAsync(ct), ct)),
         };
     }
+
+    /// <summary>The host's own tools, not a plugin's: what undo can take back, and what "Always" may answer for.</summary>
+    // Resolved when it's needed: the host's tools may use the run service themselves.
+    private async Task<HashSet<string>> OwnToolsAsync(CancellationToken ct) =>
+        [.. (await services.GetRequiredService<IAgentTools>().ListAsync(ct)).Where(t => !t.FromPlugin).Select(t => t.Name)];
+
+    /// <summary>
+    /// Whether the actor may answer this question with "Always" (<see cref="AgentQuestionInfo"/>): asked of them, about
+    /// one of the host's own tools, in a run that hasn't read outside content or beyond its scope; their own run, or one the
+    /// system started when they may change the agent's settings. Until tools say which of them undo can't take back, a
+    /// plugin's tool counts as one it can't: it may send or call out.
+    /// </summary>
+    private async Task<bool> MayAlwaysAsync(AgentActor actor, AgentQuestion q, AgentRun run, Agent agent, HashSet<string> own, CancellationToken ct) =>
+        q.AskedOf == actor.Id && !run.Outside && !run.Wide && own.Contains(q.Tool)
+        && (run.StartedBy == actor.Id || run.StartedBy is null && await agents.AdministersAsync(actor, agent, ct));
 
     /// <summary>The questions waiting for the actor's answer, oldest first.</summary>
     public async Task<List<AgentQuestionInfo>> QuestionsAsync(AgentActor actor, CancellationToken ct)
@@ -261,11 +283,12 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             .Join(db.AgentRunSteps.AsNoTracking(), x => x.q.StepId, s => s.Id, (x, s) => new { x.q, x.r, x.a, s.Output })
             .ToListAsync(ct), cancellationToken: ct);
         IReadOnlyDictionary<Guid, AgentPerson> people = await accounts.GetManyAsync(open.Select(o => o.a.AccountId).Append(actor.Id).Distinct(), ct);
+        HashSet<string> own = await OwnToolsAsync(ct);
         List<AgentQuestionInfo> infos = [];
         foreach (var o in open)
         {
             AgentItemRef? item = await ItemAsync(o.r, ct);
-            infos.Add(Info(o.q, o.r, o.a, item?.Key, people, actor, true, o.Output));
+            infos.Add(Info(o.q, o.r, o.a, item?.Key, people, actor, true, o.Output, await MayAlwaysAsync(actor, o.q, o.r, o.a, own, ct)));
         }
 
         return infos;
@@ -273,8 +296,10 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
 
     /// <summary>
     /// Answers a run's question (ADR 0086 step 6): only whoever it asks. Allowing lets the call run once, for the rest of the
-    /// run on the same target, or always (the person's own runs of this agent with this tool in this scope); refusing tells
-    /// the agent so. The run goes on either way.
+    /// run on the same target, or always where that's offered (<see cref="AgentQuestionInfo"/>): in a person's own run, their
+    /// standing permission for this agent with this tool in this scope; in a run the system started, the tool set to run in
+    /// the agent's settings. "Always" where it isn't offered counts for this run only. Refusing tells the agent so. The run
+    /// goes on either way.
     /// </summary>
     public async Task<AgentRunInfo> AnswerAsync(AgentActor actor, Guid questionId, string answer, CancellationToken ct)
     {
@@ -283,25 +308,32 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             throw new UserFriendlyException($"An answer is {string.Join(", ", AgentAnswers.All)}.");
         }
 
+        (AgentQuestion asked, AgentRun before, Agent agent) = await agentsDb.RunAsync(async db =>
+        {
+            AgentQuestion question = await db.AgentQuestions.AsNoTracking().FirstOrDefaultAsync(q => q.Id == questionId, ct)
+                ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(AgentQuestion), questionId);
+            return (question, await db.AgentRuns.AsNoTracking().FirstAsync(r => r.Id == question.RunId, ct),
+                await db.Agents.AsNoTracking().FirstAsync(a => a.Id == question.AgentId, ct));
+        }, cancellationToken: ct);
+        if (asked.AskedOf != actor.Id)
+        {
+            throw new UserFriendlyException("Only whoever it asks answers it.", AgentErrorCodes.Forbidden);
+        }
+
+        bool always = answer == AgentAnswers.Always && await MayAlwaysAsync(actor, asked, before, agent, await OwnToolsAsync(ct), ct);
+        bool standing = always && before.StartedBy == actor.Id;
         AgentRun run = await agentsDb.RunAsync(async db =>
         {
-            AgentQuestion question = await db.AgentQuestions.FirstOrDefaultAsync(q => q.Id == questionId, ct)
-                ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(AgentQuestion), questionId);
-            if (question.AskedOf != actor.Id)
-            {
-                throw new UserFriendlyException("Only whoever it asks answers it.", AgentErrorCodes.Forbidden);
-            }
-
+            AgentQuestion question = await db.AgentQuestions.FirstAsync(q => q.Id == questionId, ct);
             if (question.State != AgentQuestionStates.Open)
             {
                 throw new UserFriendlyException("It was answered already, or the run ended.", AgentErrorCodes.Conflict);
             }
 
             AgentRun run = await db.AgentRuns.FirstAsync(r => r.Id == question.RunId, ct);
-            bool always = answer == AgentAnswers.Always && run.StartedBy == actor.Id && !run.Outside && !run.Wide;
             (question.State, question.Answer, question.AnsweredBy, question.AnsweredAt) = (answer == AgentAnswers.Refuse ? AgentQuestionStates.Refused
                 : AgentQuestionStates.Allowed, answer == AgentAnswers.Always && !always ? AgentAnswers.AllowRun : answer, actor.Id, DateTime.UtcNow);
-            if (always && !await db.AgentPermissions.AnyAsync(p => p.PersonId == actor.Id && p.AgentId == question.AgentId && p.Tool == question.Tool
+            if (standing && !await db.AgentPermissions.AnyAsync(p => p.PersonId == actor.Id && p.AgentId == question.AgentId && p.Tool == question.Tool
                     && p.ScopeId == question.ScopeId, ct))
             {
                 db.AgentPermissions.Add(new AgentPermission(actor.Id, question.AgentId, question.Tool, question.ScopeId));
@@ -311,6 +343,15 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             await db.SaveChangesAsync(ct);
             return run;
         }, cancellationToken: ct);
+        if (standing)
+        {
+            await audit.WriteAsync(AgentAuditTypes.PermissionGiven, "Agent", agent.Id, agent.Key, new { person = actor.Id, tool = asked.Tool, scope = asked.ScopeId }, ct);
+        }
+        else if (always)
+        {
+            await agents.AllowToolAsync(actor, agent.Id, asked.Tool, ct); // a run the system started: the agent's settings, for every run
+        }
+
         await line.QueueAsync(run, "Agent run, answered", ct);
         return await GetAsync(actor, run.Id, ct);
     }
@@ -345,9 +386,9 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
     }
 
     private static AgentQuestionInfo Info(AgentQuestion q, AgentRun run, Agent agent, string? itemKey, IReadOnlyDictionary<Guid, AgentPerson> people, AgentActor actor,
-        bool input, string? why) =>
+        bool input, string? why, bool canAlways) =>
         new(q.Id, q.RunId, agent.Key, people.GetValueOrDefault(agent.AccountId), run.ItemKind, itemKey, q.Tool, q.Target, input ? q.Input : null, why ?? "",
-            people.GetValueOrDefault(q.AskedOf), q.CreatedAt, q.ExpiresAt, q.AskedOf == actor.Id, run.StartedBy == q.AskedOf && !run.Outside && !run.Wide);
+            people.GetValueOrDefault(q.AskedOf), q.CreatedAt, q.ExpiresAt, q.AskedOf == actor.Id, canAlways);
 
     /// <summary>An item's runs, newest first, for whoever may read the item: their steps as each reader may see them.</summary>
     public async Task<List<AgentRunInfo>> ForItemAsync(AgentActor actor, string kind, string key, CancellationToken ct)

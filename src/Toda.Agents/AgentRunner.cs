@@ -163,7 +163,8 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         string name = (string?)asked["name"] ?? "";
         AgentTool? tool = offered.FirstOrDefault(t => t.Name == name);
         (string content, bool error) = question.State == AgentQuestionStates.Allowed && tool is not null
-            ? await RunToolAsync(run, agent, item, tool, asked["input"] ?? new JsonObject(), question.StepId, reads: false, ct)
+            ? await RunToolAsync(run, agent, item, tool, asked["input"] ?? new JsonObject(), question.StepId, reads: false, ct,
+                $"{AgentAllowances.Answer}:{question.Answer}")
             : await RefuseAsync(question.StepId, question.State == AgentQuestionStates.Expired
                 ? $"No one answered in time, so {name} was not run."
                 : $"The person asked refused it, so {name} was not run. Don't try it another way.", ct);
@@ -324,12 +325,16 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             return new Call(unknown, true);
         }
 
+        string? allowed = null;
         if (!reads)
         {
             var marks = await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == run.Id).Select(r => new { r.Outside, r.Wide }).FirstAsync(ct), cancellationToken: ct);
+            allowed = marks.Outside || marks.Wide ? null
+                : agent.Tools.GetValueOrDefault(tool.Name) == AgentToolSettings.Run ? AgentAllowances.Settings
+                : await AllowedAsync(run, agent, tool.Name, step.Target, ct);
             string? why = marks.Outside ? "This run has read outside content (a customer's words or mail), so its changes ask a person first."
                 : marks.Wide ? $"This run has read beyond its {ScopeNoun}, so its changes ask a person first."
-                : agent.Tools.GetValueOrDefault(tool.Name) == AgentToolSettings.Run || await AllowedAsync(run, agent, tool.Name, step.Target, ct) ? null
+                : allowed is not null ? null
                 : $"{name} changes things, and this agent's settings say it asks first.";
             if (why is not null)
             {
@@ -338,15 +343,26 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             }
         }
 
-        (string content, bool error) = await RunToolAsync(run, agent, item, tool, input, step.Id, reads, ct);
+        (string content, bool error) = await RunToolAsync(run, agent, item, tool, input, step.Id, reads, ct, allowed);
         return new Call(content, error);
     }
 
-    /// <summary>Whether the person who started the run let this tool run without asking: always, or for this run on this target.</summary>
-    private Task<bool> AllowedAsync(AgentRun run, Agent agent, string tool, string? target, CancellationToken ct) => agentsDb.RunAsync(async db =>
-        (run.StartedBy is { } person && await db.AgentPermissions.AnyAsync(p => p.PersonId == person && p.AgentId == agent.Id && p.Tool == tool && p.ScopeId == run.ScopeId, ct))
-        || await db.AgentQuestions.AnyAsync(q => q.RunId == run.Id && q.Tool == tool && q.Target == target && q.State == AgentQuestionStates.Allowed
-            && q.Answer == AgentAnswers.AllowRun, ct), cancellationToken: ct);
+    /// <summary>
+    /// What let this tool run without asking, if anything did: the standing permission of the person who started the
+    /// run (whose use is noted), or an earlier "Allow for this run" for this tool on this target.
+    /// </summary>
+    private Task<string?> AllowedAsync(AgentRun run, Agent agent, string tool, string? target, CancellationToken ct) => agentsDb.RunAsync(async db =>
+    {
+        if (run.StartedBy is { } person
+            && await db.AgentPermissions.Where(p => p.PersonId == person && p.AgentId == agent.Id && p.Tool == tool && p.ScopeId == run.ScopeId)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.LastUsedAt, DateTime.UtcNow), ct) > 0)
+        {
+            return $"{AgentAllowances.Always}:{person}";
+        }
+
+        return await db.AgentQuestions.AnyAsync(q => q.RunId == run.Id && q.Tool == tool && q.Target == target && q.State == AgentQuestionStates.Allowed
+            && q.Answer == AgentAnswers.AllowRun, ct) ? AgentAllowances.ThisRun : null;
+    }, cancellationToken: ct);
 
     /// <summary>The run's question about the call, to whoever answers for the run; its step waits.</summary>
     private async Task<Guid> AskAsync(AgentRun run, Agent agent, AgentRunStep step, string why, CancellationToken ct)
@@ -373,7 +389,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
 
     /// <summary>Runs the tool with the run's rights under the agent's name, in its change set; its step finished after.</summary>
     private async Task<(string Content, bool Error)> RunToolAsync(AgentRun run, Agent agent, AgentItemRef? item, AgentTool tool, JsonNode input, Guid stepId,
-        bool reads, CancellationToken ct)
+        bool reads, CancellationToken ct, string? allowed = null)
     {
         string name = tool.Name;
         string content;
@@ -397,7 +413,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             (content, error) = ($"{name} failed.", true);
         }
 
-        await FinishStepAsync(stepId, error ? AgentStepOutcomes.Failed : AgentStepOutcomes.Done, content, ct);
+        await FinishStepAsync(stepId, error ? AgentStepOutcomes.Failed : AgentStepOutcomes.Done, content, ct, allowed: allowed);
         if (!error)
         {
             await MarkAsync(run, item, tool, input, content, ct);
@@ -565,10 +581,12 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         return step;
     }, requiresNew: true, cancellationToken: ct);
 
-    private Task FinishStepAsync(Guid stepId, string outcome, string output, CancellationToken ct, AgentModelReply? usage = null) => agentsDb.RunAsync(async db =>
+    private Task FinishStepAsync(Guid stepId, string outcome, string output, CancellationToken ct, AgentModelReply? usage = null, string? allowed = null) =>
+        agentsDb.RunAsync(async db =>
     {
         AgentRunStep step = await db.AgentRunSteps.FirstAsync(s => s.Id == stepId, ct);
         (step.Outcome, step.Output, step.EndedAt) = (outcome, Cut(output), DateTime.UtcNow);
+        step.Allowed = allowed ?? step.Allowed;
         if (usage is not null)
         {
             AgentRun run = await db.AgentRuns.FirstAsync(r => r.Id == step.RunId, ct);

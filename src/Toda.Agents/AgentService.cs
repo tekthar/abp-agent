@@ -305,7 +305,7 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
         return (await ForScopeAsync(actor, scopeKey, ct)).First(a => a.Agent.Id == id);
     }
 
-    /// <summary>A scope takes a site agent off: its account loses its role there.</summary>
+    /// <summary>A scope takes a site agent off: its account loses its role there, and people's standing permissions for it there go.</summary>
     public async Task TakeOffAsync(AgentActor actor, string scopeKey, Guid id, CancellationToken ct)
     {
         AgentScopeRef scope = await ManagedAsync(actor, scopeKey, ct);
@@ -318,6 +318,8 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
             }
 
             await db.AgentScopes.Where(p => p.AgentId == agent.Id && p.ScopeId == scope.Id).ExecuteDeleteAsync(ct);
+            // A standing permission ends when the agent leaves the scope (ADR 0086 section 5): taken on again, it asks again.
+            await db.AgentPermissions.Where(p => p.AgentId == agent.Id && p.ScopeId == scope.Id).ExecuteDeleteAsync(ct);
             return agent;
         }, cancellationToken: ct);
         await scopes.RevokeAsync(scope.Id, agent.AccountId, ct);
@@ -348,11 +350,32 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
         await (tracked ? db.Agents : db.Agents.AsNoTracking()).FirstOrDefaultAsync(a => a.Id == id, ct)
         ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Agent), id);
 
+    /// <summary>Whether the actor may change the agent's settings: a site admin any agent's, a scope's admins its own agents'.</summary>
+    public async Task<bool> AdministersAsync(AgentActor actor, Agent agent, CancellationToken ct) =>
+        await rights.IsSiteAdminAsync(actor, ct) || agent.ScopeId is { } scope && await rights.ManagesScopeAsync(actor, scope, ct);
+
+    /// <summary>
+    /// "Always allow" answered to a run the system started (ADR 0086 section 5): the tool runs in the agent's settings
+    /// from now on, for every run, as a change of its settings by someone who may make it.
+    /// </summary>
+    public async Task AllowToolAsync(AgentActor actor, Guid id, string tool, CancellationToken ct)
+    {
+        Agent agent = await agentsDb.RunAsync(async db =>
+        {
+            Agent agent = await AdministeredAsync(db, actor, id, ct);
+            agent.Tools = new Dictionary<string, string>(agent.Tools) { [tool] = AgentToolSettings.Run };
+            (agent.UpdatedBy, agent.UpdatedAt) = (actor.Id, DateTime.UtcNow);
+            await db.SaveChangesAsync(ct);
+            return agent;
+        }, cancellationToken: ct);
+        await audit.WriteAsync(AgentAuditTypes.Updated, "Agent", agent.Id, agent.Key, new { fields = new[] { "tools" }, tool, runs = true, from = "always allow" }, ct);
+    }
+
     /// <summary>The agent, tracked, when the actor administers it: a site admin for any agent, a scope's admins for its own.</summary>
     private async Task<Agent> AdministeredAsync(IAgentsDbContext db, AgentActor actor, Guid id, CancellationToken ct)
     {
         Agent agent = await FindAsync(db, id, ct, tracked: true);
-        if (await rights.IsSiteAdminAsync(actor, ct) || agent.ScopeId is { } scope && await rights.ManagesScopeAsync(actor, scope, ct))
+        if (await AdministersAsync(actor, agent, ct))
         {
             return agent;
         }

@@ -174,6 +174,9 @@ public class AgentRunStep : Entity<Guid>
     /// <summary>Whether the tool could change things: its step is never repeated by itself when its result isn't known.</summary>
     public bool Writes { get; set; }
 
+    /// <summary>What let a call that changes things run (ADR 0086 step 6): <see cref="AgentAllowances"/>; null for a read or a call that asked and was refused.</summary>
+    public string? Allowed { get; set; }
+
     public DateTime StartedAt { get; private set; }
 
     public DateTime? EndedAt { get; set; }
@@ -347,4 +350,23 @@ public class AgentPermission
     public Guid ScopeId { get; private set; }
 
     public DateTime CreatedAt { get; private set; }
+
+    /// <summary>When it last let a call run without asking.</summary>
+    public DateTime? LastUsedAt { get; set; }
+}
+
+/// <summary>What let a call that changes things run without asking then (<see cref="AgentRunStep.Allowed"/>).</summary>
+public static class AgentAllowances
+{
+    /// <summary>The agent's settings say the tool runs.</summary>
+    public const string Settings = "settings";
+
+    /// <summary>A person's standing permission: <c>always:{person}</c>.</summary>
+    public const string Always = "always";
+
+    /// <summary>Allowed earlier in the run, for this tool on this target.</summary>
+    public const string ThisRun = "this-run";
+
+    /// <summary>The question's answer: <c>answer:{answer}</c>.</summary>
+    public const string Answer = "answer";
 }

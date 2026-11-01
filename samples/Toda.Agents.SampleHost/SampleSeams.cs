@@ -179,10 +179,17 @@ public sealed class SampleTools(SampleDb sampleDb, SampleDirectory directory, Ti
             ReadsOnly: true, FromPlugin: false, Reach: AgentToolReach.Across),
         new("who_is_who", "Who's who", "The people who work at the run's desk.", JsonDocument.Parse("""{"type":"object"}""").RootElement,
             ReadsOnly: true, FromPlugin: false, Reach: AgentToolReach.Inside),
+        // A plugin's tool that would send a mail: what it does can't be taken back, so it's never always allowed.
+        new("email_customer", "Mail the customer", "Mails a ticket's customer (the sample only says it did).", KeyInput, ReadsOnly: false, FromPlugin: true),
     ]);
 
     public async Task<AgentToolResult> RunAsync(string name, JsonElement input, AgentActing acting, CancellationToken cancellationToken)
     {
+        if (name == "email_customer")
+        {
+            return new AgentToolResult(acting.ReadOnly ? "email_customer sends, and this act may only read." : "Mailed the customer.", acting.ReadOnly);
+        }
+
         if (name == "list_desks")
         {
             List<object> desks = [];

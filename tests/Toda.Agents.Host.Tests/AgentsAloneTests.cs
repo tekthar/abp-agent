@@ -304,7 +304,7 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         Assert.Equal(JsonValueKind.Null, asked.GetProperty("startedBy").ValueKind);
         JsonElement question = asked.GetProperty("question");
         Assert.Equal(Admin, question.GetProperty("askedOf").GetProperty("id").GetString());
-        Assert.False(question.GetProperty("canAlways").GetBoolean());
+        Assert.True(question.GetProperty("canAlways").GetBoolean()); // the admin may change the agent's settings: Always would set the tool to run
         await SendAsync(HttpMethod.Post, $"/api/agent-questions/{question.GetProperty("id").GetString()}/answer", Admin, new { answer = "allow" });
         await FinishedAsync(waiting);
         JsonElement change = (await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben)).GetProperty("changes")[0];
@@ -317,6 +317,82 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         }, default);
         Assert.Null(customer.RunId);
     }
+
+    [Fact]
+    public async Task Always_allow_is_only_for_the_hosts_own_tools_and_a_standing_permission_is_listed_used_and_taken_back()
+    {
+        string agent = await SetUpAgentAsync("mailer", """
+            demo: set_priority {"key":"$ticket","priority":"high"}
+            demo: email_customer {"key":"$ticket"}
+            demo-answer: Set and mailed.
+            """, tools: new { set_priority = "ask", email_customer = "ask" });
+        string first = await TicketAsync(Ben, "DESK", "Mail them");
+
+        // The host's own tool may be always allowed; a plugin's, which may send, may not: "always" counts for the run only.
+        JsonElement run = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{first}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
+        Assert.Equal("set_priority", run.GetProperty("question").GetProperty("tool").GetString());
+        Assert.True(run.GetProperty("question").GetProperty("canAlways").GetBoolean());
+        await SendAsync(HttpMethod.Post, $"/api/agent-questions/{run.GetProperty("question").GetProperty("id").GetString()}/answer", Ben, new { answer = "always" });
+        run = await WaitingAsync(run);
+        Assert.Equal("email_customer", run.GetProperty("question").GetProperty("tool").GetString());
+        Assert.False(run.GetProperty("question").GetProperty("canAlways").GetBoolean());
+        await SendAsync(HttpMethod.Post, $"/api/agent-questions/{run.GetProperty("question").GetProperty("id").GetString()}/answer", Ben, new { answer = "always" });
+        run = await FinishedAsync(run);
+        Assert.Equal(["answer:always", "answer:allow-run"], ToolSteps(run).Select(s => s.GetProperty("allowed").GetString()));
+
+        JsonElement mine = await SendAsync(HttpMethod.Get, "/api/me/agent-permissions", Ben);
+        Assert.Equal(["set_priority"], mine.EnumerateArray().Select(p => p.GetProperty("tool").GetString()));
+        Assert.Equal(1, (await SendAsync(HttpMethod.Get, $"/api/agents/{agent}/permissions", Admin)).GetArrayLength());
+        Assert.False((await RawAsync(HttpMethod.Get, $"/api/agents/{agent}/permissions", Cy)).IsSuccessStatusCode);
+
+        // Next time, Ben's standing permission lets set_priority run, and the step says so; the plugin's tool asks again.
+        string second = await TicketAsync(Ben, "DESK", "Mail them too");
+        run = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{second}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
+        Assert.Equal("email_customer", run.GetProperty("question").GetProperty("tool").GetString());
+        Assert.Equal($"always:{Ben}", ToolSteps(run)[0].GetProperty("allowed").GetString());
+        Assert.NotEqual(JsonValueKind.Null, (await SendAsync(HttpMethod.Get, "/api/me/agent-permissions", Ben))[0].GetProperty("lastUsedAt").ValueKind);
+        await SendAsync(HttpMethod.Post, $"/api/agent-runs/{run.GetProperty("id").GetString()}/stop", Ben);
+
+        // Taken back, it asks again.
+        JsonElement permission = mine[0];
+        await SendAsync(HttpMethod.Post, "/api/agent-permissions/remove", Ben, new
+        {
+            personId = Ben, agentId = agent, tool = "set_priority", scopeId = permission.GetProperty("scopeId").GetString(),
+        });
+        Assert.Equal(0, (await SendAsync(HttpMethod.Get, "/api/me/agent-permissions", Ben)).GetArrayLength());
+        string third = await TicketAsync(Ben, "DESK", "Ask me again");
+        run = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{third}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
+        Assert.Equal("set_priority", run.GetProperty("question").GetProperty("tool").GetString());
+        await SendAsync(HttpMethod.Post, $"/api/agent-runs/{run.GetProperty("id").GetString()}/stop", Ben);
+    }
+
+    [Fact]
+    public async Task Always_allow_in_a_run_the_system_started_is_the_agents_setting_for_whoever_may_change_it()
+    {
+        string agent = await SetUpAgentAsync("nightly", """
+            demo: set_priority {"key":"$ticket","priority":"high"}
+            demo-answer: Done.
+            """, tools: new { set_priority = "ask" });
+        string ticket = await TicketAsync(Ben, "DESK", "Overnight");
+        using IServiceScope scope = _factory!.Services.CreateScope();
+        AgentItemRef item = (await scope.ServiceProvider.GetServices<IAgentItemKind>().First(k => k.Kind == "ticket").FindAsync(ticket, default))!;
+        AgentStartResult started = await scope.ServiceProvider.GetRequiredService<AgentRunService>()
+            .StartAsync(new AgentStart(Guid.Parse(agent), "ticket", item.Id, AgentTriggers.Schedule, null, "Nightly", "night:always"), default);
+
+        // The admin who made it is its responsible person and may change its settings: "always" sets the tool to run.
+        await WaitingAsync(await SendAsync(HttpMethod.Get, $"/api/agent-runs/{started.RunId}", Admin));
+        JsonElement question = (await SendAsync(HttpMethod.Get, $"/api/agent-runs/{started.RunId}", Admin)).GetProperty("question");
+        Assert.True(question.GetProperty("canAlways").GetBoolean());
+        await SendAsync(HttpMethod.Post, $"/api/agent-questions/{question.GetProperty("id").GetString()}/answer", Admin, new { answer = "always" });
+        await FinishedAsync(await SendAsync(HttpMethod.Get, $"/api/agent-runs/{started.RunId}", Admin));
+        using IServiceScope after = _factory!.Services.CreateScope();
+        Agent saved = await after.ServiceProvider.GetRequiredService<AgentsDb>().RunAsync(db => db.Agents.AsNoTracking().FirstAsync(a => a.Id == Guid.Parse(agent)));
+        Assert.Equal(AgentToolSettings.Run, saved.Tools["set_priority"]);
+        Assert.Equal(0, (await SendAsync(HttpMethod.Get, "/api/me/agent-permissions", Admin)).GetArrayLength());
+    }
+
+    private static List<JsonElement> ToolSteps(JsonElement run) =>
+        [.. run.GetProperty("steps").EnumerateArray().Where(s => s.GetProperty("kind").GetString() == "tool")];
 
     /// <summary>This test's host, with other agents' limits; set before its first request.</summary>
     private void Limits(Action<AgentsOptions> limits) =>

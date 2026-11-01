@@ -147,6 +147,12 @@ public static class AgentAuditTypes
     public const string TakenOn = "agent.taken-on";
     public const string TakenOff = "agent.taken-off";
     public const string Switched = "agent.switched";
+
+    /// <summary>A person always allowed a tool for an agent in a scope (ADR 0086 step 6).</summary>
+    public const string PermissionGiven = "agent.permission-given";
+
+    /// <summary>A standing permission was taken back, by its person or the agent's admins.</summary>
+    public const string PermissionRemoved = "agent.permission-removed";
 }
 
 /// <summary>What an agent's settings say of a tool: it runs, it asks first, or it's off.</summary>

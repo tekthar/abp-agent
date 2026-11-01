@@ -20,7 +20,8 @@ public sealed record AnswerInput(string Answer);
 /// a ticket. Who's acting is the X-Account header (an account id): the sample has no sign-in, a real host has its own.
 /// </summary>
 [Route("api")]
-public class HelpDeskController(AgentService agents, AgentRunService runs, SampleDb sampleDb, SampleDirectory directory) : AbpControllerBase
+public class HelpDeskController(AgentService agents, AgentRunService runs, AgentPermissionService permissions, SampleDb sampleDb, SampleDirectory directory)
+    : AbpControllerBase
 {
     private AgentActor Actor => Request.Headers.TryGetValue("X-Account", out var value) && Guid.TryParse(value, out Guid id)
         ? new AgentActor(id)
@@ -95,4 +96,18 @@ public class HelpDeskController(AgentService agents, AgentRunService runs, Sampl
 
     [HttpPost("agent-questions/{id:guid}/answer")]
     public Task<AgentRunInfo> Answer(Guid id, [FromBody] AnswerInput input, CancellationToken ct) => runs.AnswerAsync(Actor, id, input.Answer, ct);
+
+    /// <summary>My standing permissions ("Always allow" in my own runs).</summary>
+    [HttpGet("me/agent-permissions")]
+    public Task<List<AgentPermissionInfo>> MyPermissions(CancellationToken ct) => permissions.MineAsync(Actor, ct);
+
+    /// <summary>The standing permissions people gave an agent, for its admins.</summary>
+    [HttpGet("agents/{id:guid}/permissions")]
+    public Task<List<AgentPermissionInfo>> AgentPermissions(Guid id, CancellationToken ct) => permissions.ForAgentAsync(Actor, id, ct);
+
+    [HttpPost("agent-permissions/remove")]
+    public Task RemovePermission([FromBody] RemovePermissionInput input, CancellationToken ct) =>
+        permissions.RemoveAsync(Actor, input.PersonId, input.AgentId, input.Tool, input.ScopeId, ct);
 }
+
+public sealed record RemovePermissionInput(Guid PersonId, Guid AgentId, string Tool, Guid ScopeId);

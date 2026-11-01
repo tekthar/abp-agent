@@ -122,6 +122,7 @@ public static class AgentsModel
             b.Property(x => x.Name).HasMaxLength(200).IsRequired();
             b.Property(x => x.Target).HasMaxLength(64);
             b.Property(x => x.Outcome).HasMaxLength(16).IsRequired();
+            b.Property(x => x.Allowed).HasMaxLength(64);
             b.HasIndex(x => new { x.RunId, x.Number }).IsUnique();
         });
 
