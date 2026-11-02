@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Toda.Agents;
 
@@ -37,6 +38,14 @@ public interface IAgentItemKind
 
     /// <summary>Whether a text has the shape of one of this kind's keys (a tool's answer names items by key).</summary>
     bool IsKey(string key);
+
+    /// <summary>
+    /// Whether an object in a tool's answer is one of this kind's items by its shape (a record has its project, an asset
+    /// its schema), so its key is this kind's alone, and so are the keys of the objects inside it that no kind claims.
+    /// Two kinds' keys can look alike (a project and an asset schema can share a key: IT-5 is both); a host whose kinds
+    /// can't be told apart by shape leaves it false, and every kind whose key shape fits looks at the key.
+    /// </summary>
+    bool Claims(JsonObject item) => false;
 
     /// <summary>The item by its key, in any scope; null when there's none.</summary>
     Task<AgentItemRef?> FindAsync(string key, CancellationToken cancellationToken);
@@ -94,7 +103,14 @@ public enum AgentToolReach
 
 /// <summary>A tool an agent may be offered: the model sees its name, description and input schema.</summary>
 public sealed record AgentTool(string Name, string Title, string Description, JsonElement InputSchema, bool ReadsOnly, bool FromPlugin,
-    AgentToolReach Reach = AgentToolReach.Items);
+    AgentToolReach Reach = AgentToolReach.Items)
+{
+    /// <summary>
+    /// The item kind the tool works on (<see cref="IAgentItemKind.Kind"/>): its input's key is that kind's, and so are the
+    /// keys in its answer no kind claims. Null: any kind whose key shape fits.
+    /// </summary>
+    public string? ItemKind { get; init; }
+}
 
 /// <summary>A tool's answer: its content for the model, and whether it failed (a refusal, a bad input).</summary>
 public sealed record AgentToolResult(string Content, bool Error);

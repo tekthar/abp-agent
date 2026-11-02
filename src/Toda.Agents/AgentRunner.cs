@@ -254,7 +254,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
 
             text.Append("\n\n<").Append(kind.Noun).Append(" key=\"").Append(item.Key).Append("\">\n")
                 .Append(read ?? "(you can't read it)").Append("\n</").Append(kind.Noun).Append('>');
-            await SetMarksAsync(run.Id, await BroughtAsync(run, item, [item.Key], ct), ct);
+            await SetMarksAsync(run.Id, await BroughtAsync(run, item, [(item.Key, item.Kind)], ct), ct);
         }
 
         await agentsDb.RunAsync(async db =>
@@ -441,15 +441,15 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             return;
         }
 
-        HashSet<string> keys = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<(string Key, string? Kind)> keys = [];
         if (Target(input) is { } target)
         {
-            keys.Add(target);
+            keys.Add((target, tool.ItemKind));
         }
 
         try
         {
-            Keys(JsonNode.Parse(answer), keys);
+            Keys(JsonNode.Parse(answer), tool.ItemKind, keys);
         }
         catch (JsonException)
         {
@@ -460,25 +460,30 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         await SetMarksAsync(run.Id, tool.Reach == AgentToolReach.Across ? brought with { Beyond = true } : brought, ct);
     }
 
-    /// <summary>What the keys a read named brought in, as each kind answers for its own.</summary>
-    private async Task<AgentBrought> BroughtAsync(AgentRun run, AgentItemRef? item, HashSet<string> keys, CancellationToken ct)
+    /// <summary>
+    /// What the keys a read named brought in, as each kind answers for its own: a key known to be a kind's goes to it
+    /// alone (two kinds' keys can look alike), and one of no known kind to every kind.
+    /// </summary>
+    private async Task<AgentBrought> BroughtAsync(AgentRun run, AgentItemRef? item, IReadOnlyCollection<(string Key, string? Kind)> keys, CancellationToken ct)
     {
         AgentBrought brought = AgentBrought.Nothing;
-        if (keys.Count == 0)
-        {
-            return brought;
-        }
-
         foreach (IAgentItemKind kind in Kinds())
         {
-            brought = brought.Or(await kind.BroughtAsync(run.ScopeId, item, keys, ct));
+            HashSet<string> its = new(keys.Where(k => k.Kind is null || k.Kind == kind.Kind).Select(k => k.Key), StringComparer.OrdinalIgnoreCase);
+            if (its.Count > 0)
+            {
+                brought = brought.Or(await kind.BroughtAsync(run.ScopeId, item, its, ct));
+            }
         }
 
         return brought;
     }
 
-    /// <summary>Item keys an answer holds: each "key" or "recordKey" that has a kind's key shape, anywhere in it (at most 200).</summary>
-    private void Keys(JsonNode? node, HashSet<string> keys)
+    /// <summary>
+    /// Item keys an answer holds: each "key" or "recordKey" that has a kind's key shape, anywhere in it (at most 200), with
+    /// the kind it is: the kind that claims the object it's in, else the enclosing object's, else the tool's; else none.
+    /// </summary>
+    private void Keys(JsonNode? node, string? kindHere, HashSet<(string Key, string? Kind)> keys)
     {
         if (keys.Count >= 200)
         {
@@ -488,15 +493,17 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         switch (node)
         {
             case JsonObject o:
+                List<IAgentItemKind> claiming = [.. Kinds().Where(k => k.Claims(o))];
+                string? kind = claiming.Count == 1 ? claiming[0].Kind : claiming.Count > 1 ? null : kindHere;
                 foreach ((string name, JsonNode? value) in o)
                 {
                     if (name is "key" or "recordKey" && value is JsonValue v && v.TryGetValue(out string? key) && Kinds().Any(k => k.IsKey(key)))
                     {
-                        keys.Add(key);
+                        keys.Add((key, kind));
                     }
                     else
                     {
-                        Keys(value, keys);
+                        Keys(value, kind, keys);
                     }
                 }
 
@@ -504,7 +511,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             case JsonArray a:
                 foreach (JsonNode? element in a)
                 {
-                    Keys(element, keys);
+                    Keys(element, kindHere, keys);
                 }
 
                 break;

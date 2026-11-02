@@ -145,4 +145,6 @@ Each step lands on main with `e2e_agents.py` passing. The full CI runs at A4 and
 - **Amended 2 Nov, assets** (docs/agents.md, "Assets as agents' items"): a host's scopes may be of more than one kind,
   with no change to the package. Toda's adapters answer for projects and ask its own `IAgentScopeKind` about the rest:
   asset schemas, keyed `assets:IT` so they never clash with a project's key. Assets are a full item kind, as records
-  are. A scope that isn't a project uses the site's AI models, and its jobs name no project.
+  are. A scope that isn't a project uses the site's AI models, and its jobs name no project. Since two kinds' keys
+  can then look alike (`IT-5`, a record and an asset), a key goes to the kind it is: `IAgentItemKind.Claims` (by an
+  object's shape) and `AgentTool.ItemKind` (the tool's kind), both additions with defaults (docs/toda-agents.md).
