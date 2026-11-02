@@ -480,8 +480,9 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     }
 
     /// <summary>
-    /// Item keys an answer holds: each "key" or "recordKey" that has a kind's key shape, anywhere in it (at most 200), with
-    /// the kind it is: the kind that claims the object it's in, else the enclosing object's, else the tool's; else none.
+    /// Item keys an answer holds: each "key" or "recordKey" that has a kind's key shape, anywhere in it (at most 200). A
+    /// "key" is of the kind that claims the object it's in, else the enclosing object's, else the tool's; else, and for a
+    /// "recordKey", of no known kind.
     /// </summary>
     private void Keys(JsonNode? node, string? kindHere, HashSet<(string Key, string? Kind)> keys)
     {
@@ -499,7 +500,8 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
                 {
                     if (name is "key" or "recordKey" && value is JsonValue v && v.TryGetValue(out string? key) && Kinds().Any(k => k.IsKey(key)))
                     {
-                        keys.Add((key, kind));
+                        // A "recordKey" names another item than the object it's in: every kind whose key shape fits looks at it.
+                        keys.Add((key, name == "key" ? kind : null));
                     }
                     else
                     {
