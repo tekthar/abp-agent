@@ -142,3 +142,7 @@ Each step lands on main with `e2e_agents.py` passing. The full CI runs at A4 and
   the change set of the act that caused it (`CausedInChangeSet`), whose rights a run no one started uses (`ActorId`),
   and an outside sender (`Sender`); `IAgentEvents` tells of a day's cap (`RunsCappedAsync`); the package keeps four
   more columns. What a host needs to do is in docs/toda-agents.md.
+- **Amended 2 Nov, assets** (docs/agents.md, "Assets as agents' items"): a host's scopes may be of more than one kind,
+  with no change to the package. Toda's adapters answer for projects and ask its own `IAgentScopeKind` about the rest:
+  asset schemas, keyed `assets:IT` so they never clash with a project's key. Assets are a full item kind, as records
+  are. A scope that isn't a project uses the site's AI models, and its jobs name no project.
