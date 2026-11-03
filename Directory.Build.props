@@ -1,0 +1,39 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- One version for every package (see README.md, "Releasing", and CHANGELOG.md); a VersionSuffix makes a prerelease. -->
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionSuffix>preview.1</VersionSuffix>
+
+    <Authors>Toda contributors</Authors>
+    <Company>Tekthar</Company>
+    <Copyright>Copyright 2026 Toda contributors</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/todahq/toda-agents</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/todahq/toda-agents.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>ai;agents;llm;tool-use;abp;efcore;postgresql</PackageTags>
+    <PackageReleaseNotes>https://github.com/todahq/toda-agents/blob/main/CHANGELOG.md</PackageReleaseNotes>
+
+    <!-- Debugging into the packages: SourceLink (built into the .NET SDK) and a symbol package next to each .nupkg. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <AbpVersion>10.6.1</AbpVersion>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+</Project>

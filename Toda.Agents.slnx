@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/Toda.Agents.SampleHost/Toda.Agents.SampleHost.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Toda.Agents.Contracts/Toda.Agents.Contracts.csproj" />
+    <Project Path="src/Toda.Agents/Toda.Agents.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Toda.Agents.Tests/Toda.Agents.Tests.csproj" />
+    <Project Path="tests/Toda.Agents.Host.Tests/Toda.Agents.Host.Tests.csproj" />
+  </Folder>
+</Solution>
