@@ -24,9 +24,9 @@ public sealed record AgentBrought(bool Outside, bool Beyond)
 }
 
 /// <summary>
-/// A kind of item agents work on (ADR 0091): Toda's records, and the marketplace's listing versions. One class per kind,
-/// registered under this interface. A kind that only answers what its keys bring in (assets, which runs don't work on
-/// yet) says no one may read its items.
+/// A kind of item agents work on (ADR 0091): Toda's records and assets, and the marketplace's listing versions. One class
+/// per kind, registered under this interface. A kind that only answers what its keys bring in says no one may read its
+/// items.
 /// </summary>
 public interface IAgentItemKind
 {
