@@ -101,7 +101,8 @@ Rules that hold for every host:
 - **The backup and the data map follow** (ADR 0068, ADR 0082): transcripts are personal data.
 - **Configuration: `AgentsOptions`, from the "Agents" section:** whether admins may turn agents on, the transcripts'
   period, the run's limits (30 turns, 60 tool calls, 15 minutes), and the product's name for the agent's persona.
-  Toda binds its `Toda:Agents:*` settings to it, so nothing changes for an operator.
+  Toda binds its `Agents:*` settings to it (ADR 0093; the names before are still read for one release), so nothing
+  changes for an operator.
 
 ### The marketplace
 

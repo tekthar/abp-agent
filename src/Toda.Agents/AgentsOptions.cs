@@ -1,7 +1,7 @@
 namespace Toda.Agents;
 
 /// <summary>
-/// Agents' settings (ADR 0091), from the host's "Agents" section. Toda binds its <c>Toda:Agents:*</c> settings here, so
+/// Agents' settings (ADR 0091), from the host's "Agents" section. Toda binds its <c>Agents:*</c> settings here, so
 /// an operator's values stay where they were.
 /// </summary>
 public class AgentsOptions
