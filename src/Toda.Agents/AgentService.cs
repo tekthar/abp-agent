@@ -158,7 +158,8 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
         // The account comes first: a username that's taken stops here, before anything else is written.
         string username = scope is null ? $"agent.{key}" : $"agent.{scope.Key.ToLowerInvariant()}.{key}";
         Dictionary<string, string> names = Clean(input.Names) is { Count: > 0 } given ? given : new() { ["en"] = key };
-        AgentPerson account = await accounts.CreateAsync(username, names.GetValueOrDefault("en") ?? names.Values.First(), ct);
+        (string written, Dictionary<string, string> others) = AccountNames(names);
+        AgentPerson account = await accounts.CreateAsync(username, written, others, ct);
 
         Agent agent = new(Guid.NewGuid(), account.Id, key, scope?.Id, responsible, me)
         {
@@ -197,11 +198,13 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
         Check(input);
         Guid? responsible = input.ResponsibleId is { } r ? await ResponsibleAsync(r, ct) : null;
         List<Guid>? offered = input.OfferedTo is not null ? await ScopeIdsAsync(input.OfferedTo, ct) : null;
+        bool renamed = false;
         Agent agent = await agentsDb.RunAsync(async db =>
         {
             Agent agent = await AdministeredAsync(db, actor, id, ct);
             if (input.Names is { } names && Clean(names) is { Count: > 0 } cleaned)
             {
+                renamed = cleaned.Count != agent.Names.Count || cleaned.Any(n => agent.Names.GetValueOrDefault(n.Key) != n.Value);
                 agent.Names = cleaned;
             }
 
@@ -249,8 +252,25 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
             await db.SaveChangesAsync(ct);
             return agent;
         }, cancellationToken: ct);
+        if (renamed)
+        {
+            // Its account follows, so pickers and notices name it as it's called now.
+            (string written, Dictionary<string, string> others) = AccountNames(agent.Names);
+            await accounts.RenameAsync(agent.AccountId, written, others, ct);
+        }
+
         await audit.WriteAsync(AgentAuditTypes.Updated, "Agent", agent.Id, agent.Key, new { fields = Changed(input) }, ct);
         return await GetAsync(agent.Id, ct);
+    }
+
+    /// <summary>
+    /// The names its account takes from an agent's: the name as written (English, else its first) and the name in each
+    /// other language.
+    /// </summary>
+    internal static (string Written, Dictionary<string, string> Others) AccountNames(IReadOnlyDictionary<string, string> names)
+    {
+        string language = names.ContainsKey("en") ? "en" : names.Keys.First();
+        return (names[language], names.Where(n => n.Key != language).ToDictionary(n => n.Key, n => n.Value));
     }
 
     /// <summary>

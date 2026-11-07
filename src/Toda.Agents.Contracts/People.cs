@@ -31,6 +31,29 @@ public interface IAgentAccounts
 
     /// <summary>The accounts there are of these; missing ones are left out.</summary>
     Task<IReadOnlyDictionary<Guid, AgentPerson>> GetManyAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Makes an agent's account with its name in other languages as well (by language code) beside the name as written.
+    /// The default makes it with the name as written, then gives it the others through <see cref="RenameAsync"/>.
+    /// </summary>
+    async Task<AgentPerson> CreateAsync(string username, string displayName, IReadOnlyDictionary<string, string> displayNames, CancellationToken cancellationToken)
+    {
+        AgentPerson made = await CreateAsync(username, displayName, cancellationToken);
+        if (displayNames.Count > 0)
+        {
+            await RenameAsync(made.Id, displayName, displayNames, cancellationToken);
+        }
+
+        return made;
+    }
+
+    /// <summary>
+    /// Gives an agent's account its names, when the agent is made with names in several languages or renamed: the name
+    /// as written (its English name, else its first) and its name in each other language, by language code. The default
+    /// leaves the account as it was made, for a host whose accounts have one name.
+    /// </summary>
+    Task RenameAsync(Guid accountId, string displayName, IReadOnlyDictionary<string, string> displayNames, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 }
 
 /// <summary>Who may administer what (ADR 0091). The default: nobody but those the host calls site admins, and no scopes.</summary>

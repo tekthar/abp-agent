@@ -124,6 +124,9 @@ public class SampleAccount : Entity<Guid>
     public string Username { get; private set; } = "";
 
     public string DisplayName { get; private set; } = "";
+
+    /// <summary>The agent was renamed: the sample keeps one name, the name as written.</summary>
+    public void Rename(string displayName) => DisplayName = displayName;
 }
 
 /// <summary>A role an account has on a desk: what an agent a desk took on works with when the system starts its runs.</summary>

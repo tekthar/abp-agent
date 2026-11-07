@@ -164,6 +164,20 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Renaming_an_agent_renames_its_account_and_other_changes_leave_it()
+    {
+        string agent = await SetUpAgentAsync("namer", "demo-answer: Done.");
+        JsonElement unchanged = await SendAsync(HttpMethod.Put, $"/api/agents/{agent}", Admin, new { instructions = "demo-answer: Still done." });
+        Assert.Equal("namer", unchanged.GetProperty("account").GetProperty("displayName").GetString());
+
+        JsonElement renamed = await SendAsync(HttpMethod.Put, $"/api/agents/{agent}", Admin, new { names = new Dictionary<string, string> { ["en"] = "Desk helper", ["ar"] = "مساعد المكتب" } });
+        Assert.Equal("Desk helper", renamed.GetProperty("account").GetProperty("displayName").GetString());
+
+        JsonElement other = await SendAsync(HttpMethod.Put, $"/api/agents/{agent}", Admin, new { instructions = "demo-answer: Done again." });
+        Assert.Equal("Desk helper", other.GetProperty("account").GetProperty("displayName").GetString());
+    }
+
+    [Fact]
     public async Task A_write_a_stop_left_unknown_is_named_to_the_agent_not_repeated()
     {
         string agent = await SetUpAgentAsync("resumer", "demo-answer: I checked first.");

@@ -6,6 +6,13 @@ All notable changes to Toda Agents are written here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `IAgentAccounts.CreateAsync` with the account's name in other languages, and `IAgentAccounts.RenameAsync`, both with
+  defaults (the account is made with one name and kept as made), so a host that implements neither keeps working. An
+  agent's account is made with the agent's names, the name as written being its English one (else its first), and is
+  renamed when an update changes the agent's names.
+
 ## [0.1.0-preview.1] - 2026-11-03
 
 The first release as packages, after agents ran in Toda on its records and assets.

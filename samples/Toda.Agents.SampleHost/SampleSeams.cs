@@ -60,6 +60,17 @@ public sealed class SampleAccounts(SampleDb sampleDb, SampleDirectory directory)
 
         return found;
     }
+
+    /// <summary>An agent renamed: its account takes the name as written (the sample keeps no other languages).</summary>
+    public Task RenameAsync(Guid accountId, string displayName, IReadOnlyDictionary<string, string> displayNames, CancellationToken cancellationToken) =>
+        sampleDb.RunAsync(async db =>
+        {
+            if (await db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId, cancellationToken) is { } account && account.DisplayName != displayName)
+            {
+                account.Rename(displayName);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+        }, cancellationToken);
 }
 
 /// <summary>The sample's admins administer the site and every desk.</summary>

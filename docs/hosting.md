@@ -7,7 +7,7 @@ Each seam is an interface in `Toda.Agents.Contracts`. Register yours in your mod
 
 | Seam | What it answers | Default |
 |---|---|---|
-| `IAgentAccounts` | make an agent's account (no sign-in, no tokens); who people are: name, username, kind (person, service, agent), active | none: you must give one |
+| `IAgentAccounts` | make an agent's account (no sign-in, no tokens); who people are: name, username, kind (person, service, agent), active; optionally, the account's name in other languages and renaming it when the agent is renamed | none: you must give one (the names by language and the rename have defaults: one name, kept as made) |
 | `IAgentRights` | is the actor a site admin; does the actor administer a scope | none |
 | `IAgentScopes` | a scope by key (when the actor may read it), by id, by keys; why a role can't be given; grant and take back an agent's role | none |
 | `IAgentItemKind` (one per kind) | see [items](items.md) | none |
