@@ -694,22 +694,29 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     /// <summary>
     /// Where a call that changes things lands: its item's scope (the item looked up by the tool's kind, or by every kind
     /// its key's shape fits), else the scope its input names or makes something in, as the kinds read it. Placed but no
-    /// scope when it names an item that isn't there (the call fails as it runs); not placed when it names nothing a kind
-    /// can place.
+    /// scope when it names an item by a kind's key that isn't there (the call fails as it runs); not placed when it names
+    /// nothing a kind can place, a "key" no kind's shape fits included.
     /// </summary>
     private async Task<(Guid? Scope, bool Placed)> ScopeOfAsync(AgentTool tool, JsonNode input, CancellationToken ct)
     {
         if (ItemKey(input) is { } key)
         {
+            bool fits = false;
             foreach (IAgentItemKind kind in Kinds().Where(k => (tool.ItemKind is null || k.Kind == tool.ItemKind) && k.IsKey(key)))
             {
+                fits = true;
                 if (await kind.FindAsync(key, ct) is { } found)
                 {
                     return (found.ScopeId, true);
                 }
             }
 
-            return (null, true);
+            // An item's key with nothing there: the call fails as it runs. A "key" no kind's shape fits isn't an item's,
+            // so it places nothing: the scope its input names decides, else it isn't placed.
+            if (fits)
+            {
+                return (null, true);
+            }
         }
 
         return await NamedScopeAsync(tool, input, ct) is { } named ? (named, true) : (null, false);

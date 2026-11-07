@@ -129,13 +129,15 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         Assert.NotEqual("high", (await SendAsync(HttpMethod.Get, $"/api/tickets/{elsewhere}", Ben)).GetProperty("priority").GetString());
     }
 
-    [Fact]
-    public async Task A_change_that_names_nowhere_it_can_be_placed_asks_before_it_runs()
+    [Theory]
+    [InlineData("placeless", """{"priority":"high"}""")]
+    [InlineData("keyless", """{"key":"not a ticket","priority":"high"}""")]
+    public async Task A_change_that_names_nowhere_it_can_be_placed_asks_before_it_runs(string key, string call)
     {
-        // The host's own tool, its settings set to run, called with no ticket and no desk: where it would land can't be
-        // told, so it counts as beyond the run's desk (fail closed) and asks.
-        string agent = await SetUpAgentAsync("placeless", """
-            demo: set_priority {"priority":"high"}
+        // The host's own tool, its settings set to run, called with no ticket and no desk, or with a "key" no kind's shape
+        // fits: where it would land can't be told, so it counts as beyond the run's desk (fail closed) and asks.
+        string agent = await SetUpAgentAsync(key, $"""
+            demo: set_priority {call}
             demo-answer: Done.
             """);
         string ticket = await TicketAsync(Ben, "DESK", "Here");
