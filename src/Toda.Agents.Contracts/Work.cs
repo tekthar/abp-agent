@@ -50,6 +50,14 @@ public interface IAgentItemKind
     /// <summary>The item by its key, in any scope; null when there's none.</summary>
     Task<AgentItemRef?> FindAsync(string key, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// The scope a tool call's input names, or makes something in, in this kind's own words when it names no item by key:
+    /// a record's "project", an asset's "schema" or the "type" it makes one of. Null when it names none of this kind's, or
+    /// can't be told (a type's name two schemas share). A run looks up where a change lands before it runs it, and a
+    /// host's change it can't place counts as beyond the run's scope, so it asks first.
+    /// </summary>
+    Task<Guid?> ScopeNamedAsync(JsonElement input, CancellationToken cancellationToken) => Task.FromResult<Guid?>(null);
+
     /// <summary>The item by its id; null when there's none.</summary>
     Task<AgentItemRef?> GetAsync(Guid id, CancellationToken cancellationToken);
 
@@ -99,6 +107,12 @@ public enum AgentToolReach
 
     /// <summary>Across scopes (the site's list of projects): it marks the run as having read beyond its scope.</summary>
     Across,
+
+    /// <summary>
+    /// Inside the scope its input names (a project's shape, a schema's types, a project's saved queries): it marks the run
+    /// as having read beyond its scope when that isn't the run's, or when it names none and so reads every scope's.
+    /// </summary>
+    Named,
 }
 
 /// <summary>A tool an agent may be offered: the model sees its name, description and input schema.</summary>

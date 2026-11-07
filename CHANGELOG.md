@@ -19,9 +19,14 @@ All notable changes to Toda Agents are written here. The format follows
   steered into writing no longer loads where the answer is drawn.
 - A change beyond the run's scope asks before it runs: its item, or the `project` it makes something in, is looked up
   first and the run is marked as reaching beyond its scope, so neither the agent's settings nor a standing permission
-  lets it through. "Allow for this run" names the project when the call names no item.
+  lets it through.
 - Item keys in a tool's answer are read from `record` too, and a tool that reads only inside a scope marks the run as
-  reaching beyond it when its input names another `project`.
+  reaching beyond it when its input names another scope.
+- Where a change lands is asked of the item kinds (`IAgentItemKind.ScopeNamedAsync`, defaulted), for a change that
+  names no item: a host's change whose landing can't be told counts as beyond the run's scope, and asks.
+  "Allow for this run" names the landing scope's key when the change names no item.
+- `AgentToolReach.Named`: a tool that reads the scope its input names marks the run when that isn't the run's scope,
+  or when it names none.
 
 ## [0.1.0-preview.1] - 2026-11-03
 

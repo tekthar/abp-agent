@@ -130,6 +130,23 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_change_that_names_nowhere_it_can_be_placed_asks_before_it_runs()
+    {
+        // The host's own tool, its settings set to run, called with no ticket and no desk: where it would land can't be
+        // told, so it counts as beyond the run's desk (fail closed) and asks.
+        string agent = await SetUpAgentAsync("placeless", """
+            demo: set_priority {"priority":"high"}
+            demo-answer: Done.
+            """);
+        string ticket = await TicketAsync(Ben, "DESK", "Here");
+
+        JsonElement waiting = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
+        Assert.Equal("waiting", waiting.GetProperty("state").GetString());
+        Assert.True(Tools(waiting) is ["set_priority:asked"], waiting.ToString());
+        Assert.True(waiting.GetProperty("wide").GetBoolean());
+    }
+
+    [Fact]
     public async Task Reading_another_desk_makes_the_run_wide_and_its_answer_stays_in_the_run()
     {
         string agent = await SetUpAgentAsync("roamer", """

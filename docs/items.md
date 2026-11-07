@@ -15,6 +15,7 @@ host has plugins, by `{plugin}:{key}`.
 | `IsKey(key)` | whether a text has the shape of one of your keys. The runner collects the `key` and `recordKey` values in a tool's input and answer that any kind says are keys, and asks each kind what its own bring in: see [two kinds whose keys look alike](#two-kinds-whose-keys-look-alike) |
 | `Claims(item)` | whether an object in a tool's answer is one of your items by its shape (Toda's records have their project, its assets their schema). Optional: false by default |
 | `FindAsync(key)` | the item by key, in any scope, or null. Asking an agent finds the item this way |
+| `ScopeNamedAsync(input)` | the scope a tool call's input names, or makes something in, in your words (a desk, a project, the type of item it makes), when it names no item by key. Optional: null by default, so a change of your own tools that names no item asks first |
 | `GetAsync(id)` | the item by id, or null. Keep finding items that were deleted, so their runs can still be read |
 | `AccessAsync(actor, item)` | what the actor may do: read it, change it, manage it, read its internal notes. Asking needs `Read`; stopping a run needs `Change`; reading a run's steps comes with `Manage` |
 | `ReadAsync(acting, item)` | the item as JSON, read with the run's rights (`acting.ActorId`), or null when the run can't read it. This goes to the model as data |

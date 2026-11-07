@@ -21,8 +21,13 @@ public sealed record AgentTool(string Name, string Title, string Description, Js
 - **`FromPlugin`:** a plugin's tool. It's treated as one that can change things, however it's marked, and its answer as
   outside and beyond, because the package can't look into a plugin's store. No one is offered "always allow" for it.
 - **`Reach`:** how far it reads beside the items it names. `Items` (the default): each key in its input or answer is
-  looked at. `Inside`: it reads only what's inside the team and the scope (who's who, saved searches, docs), so it marks
-  nothing. `Across`: it reads across scopes (a list of every project), so it marks the run as beyond.
+  looked at. `Inside`: it reads only what's inside the team and the scope (who's who, docs), so it marks nothing, unless
+  its input names another scope. `Named`: it reads the scope its input names (a project's shape or saved searches), so
+  it marks the run as beyond when that isn't the run's scope or it names none. `Across`: it reads across scopes (a list
+  of every project), so it marks the run as beyond.
+- **A change's landing:** before a change runs, where it lands is looked up: the item it names, else the scope your item
+  kinds read in its input (`ScopeNamedAsync`). Beyond the run's scope, or a change of your own tools that names nowhere
+  that can be told, it asks first, whatever the agent's settings or a standing permission say.
 - **`ItemKind`:** the item kind it works on (`ticket`), when your kinds' keys can look alike: its input's key, and the
   keys in its answer that no kind claims, are that kind's. Null, the default: any kind whose key shape fits. See
   [items](items.md#two-kinds-whose-keys-look-alike).

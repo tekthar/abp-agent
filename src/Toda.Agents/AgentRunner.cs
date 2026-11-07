@@ -303,7 +303,15 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         // A plugin's tool counts as one that changes things, however it's marked, until plugins' own stores refuse an
         // agent's read writes as the host's do.
         bool reads = tool is { ReadsOnly: true, FromPlugin: false };
-        AgentRunStep step = new(Guid.NewGuid(), run.Id, number, "tool", Cut(name, 200), Cut(input.ToJsonString())) { Writes = !reads, Target = Target(input) };
+        // Where a change lands, looked up before it runs: its item's scope, or the scope its input makes something in.
+        (Guid? lands, bool placed) = tool is not null && !reads ? await ScopeOfAsync(tool, input, ct) : (null, true);
+        AgentRunStep step = new(Guid.NewGuid(), run.Id, number, "tool", Cut(name, 200), Cut(input.ToJsonString()))
+        {
+            Writes = !reads,
+            // What its question and "Allow for this run" name: the item, else the scope it lands in, so allowing one never
+            // allows the same in another scope.
+            Target = ItemKey(input) ?? (lands is { } where ? await ScopeKeyAsync(where, ct) : null),
+        };
         await StartStepAsync(step, ct);
         if (tool is { Name: FinishStep } && run.Exits is { Count: > 0 } exits)
         {
@@ -328,10 +336,11 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         string? allowed = null;
         if (!reads)
         {
-            // A change beyond the run's scope asks before it's made, not after: what it names is looked up first, and a
-            // run that reaches beyond its scope is marked as having done so, so neither its settings nor a standing
-            // permission (both its scope's) let the change run.
-            if (await ScopeOfAsync(tool, input, ct) is { } scope && scope != run.ScopeId)
+            // A change beyond the run's scope asks before it's made, not after, and so does one of the host's own tools
+            // whose landing can't be told (fail closed): the run is marked as reaching beyond its scope, so neither its
+            // settings nor a standing permission (both its scope's) let the change run. A plugin's tool, which names
+            // things in its own words, is looked at after it runs, as before.
+            if (lands is { } scope ? scope != run.ScopeId : !placed && !tool.FromPlugin)
             {
                 await SetMarksAsync(run.Id, new AgentBrought(false, true), ct);
             }
@@ -438,10 +447,12 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     /// </summary>
     private async Task MarkAsync(AgentRun run, AgentItemRef? item, AgentTool tool, JsonNode input, string answer, CancellationToken ct)
     {
-        if (tool.Reach == AgentToolReach.Inside)
+        if (tool.Reach is AgentToolReach.Inside or AgentToolReach.Named)
         {
-            // A tool that reads only inside a scope still reads another one when it's told to: its input names it.
-            if (await NamedScopeAsync(input, ct) is { } named && named != run.ScopeId)
+            // A tool that reads inside a scope still reads another one when its input names it; one that reads the scope
+            // its input names reads every scope's when it names none.
+            Guid? named = await NamedScopeAsync(tool, input, ct);
+            if (named is { } scope ? scope != run.ScopeId : tool.Reach == AgentToolReach.Named)
             {
                 await SetMarksAsync(run.Id, new AgentBrought(false, true), ct);
             }
@@ -676,25 +687,17 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     private static string Text(JsonObject message) => string.Concat((message["content"] as JsonArray ?? [])
         .Where(b => (string?)b?["type"] == "text").Select(b => (string?)b?["text"] ?? ""));
 
-    /// <summary>
-    /// What a tool call is about, as its question and "Allow for this run" name it: the item its input names, else the
-    /// scope it makes something in (create_record's project), so allowing one never allows the same in another scope.
-    /// </summary>
-    private static string? Target(JsonNode input) => ItemKey(input) ?? ScopeKey(input);
-
     /// <summary>The item a tool call is about, when its input names one.</summary>
     private static string? ItemKey(JsonNode input) =>
         input is JsonObject o && (o["key"] ?? o["recordKey"] ?? o["record"]) is JsonValue v && v.TryGetValue(out string? key) && key.Length <= 64 ? key : null;
 
-    /// <summary>The scope a tool call's input names by key ("project", or an asset schema's "schema"), when it names one.</summary>
-    private static string? ScopeKey(JsonNode input) =>
-        input is JsonObject o && (o["project"] ?? o["schema"]) is JsonValue v && v.TryGetValue(out string? key) && key.Length is > 0 and <= 64 ? key.Trim() : null;
-
     /// <summary>
-    /// The scope a call that changes things lands in: its item's (looked up by the tool's kind, or by every kind its key's
-    /// shape fits), else the scope its input names. Null when it names neither, or nothing by that key is there.
+    /// Where a call that changes things lands: its item's scope (the item looked up by the tool's kind, or by every kind
+    /// its key's shape fits), else the scope its input names or makes something in, as the kinds read it. Placed but no
+    /// scope when it names an item that isn't there (the call fails as it runs); not placed when it names nothing a kind
+    /// can place.
     /// </summary>
-    private async Task<Guid?> ScopeOfAsync(AgentTool tool, JsonNode input, CancellationToken ct)
+    private async Task<(Guid? Scope, bool Placed)> ScopeOfAsync(AgentTool tool, JsonNode input, CancellationToken ct)
     {
         if (ItemKey(input) is { } key)
         {
@@ -702,23 +705,37 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             {
                 if (await kind.FindAsync(key, ct) is { } found)
                 {
-                    return found.ScopeId;
+                    return (found.ScopeId, true);
                 }
             }
+
+            return (null, true);
         }
 
-        return await NamedScopeAsync(input, ct);
+        return await NamedScopeAsync(tool, input, ct) is { } named ? (named, true) : (null, false);
     }
 
     /// <summary>
-    /// The scope a call's input names as its "project", by the host's scopes; null when it names none that's there. (An
-    /// asset schema's tools name items by key, which their kind looks up.)
+    /// The scope a call's input names or makes something in (a "project", an asset's "schema" or "type"), as the kinds
+    /// read it: the tool's own kind alone when it has one, so one kind's words are never read as another's.
     /// </summary>
-    private async Task<Guid?> NamedScopeAsync(JsonNode input, CancellationToken ct) =>
-        input is JsonObject o && o["project"] is JsonValue v && v.TryGetValue(out string? key) && key.Trim() is { Length: > 0 and <= 64 } project
-        && (await services.GetRequiredService<IAgentScopes>().FindManyAsync([project.ToUpperInvariant()], ct)).Values.FirstOrDefault() is { } scope
-            ? scope.Id
-            : null;
+    private async Task<Guid?> NamedScopeAsync(AgentTool tool, JsonNode input, CancellationToken ct)
+    {
+        JsonElement read = JsonSerializer.SerializeToElement(input);
+        foreach (IAgentItemKind kind in Kinds().Where(k => tool.ItemKind is null || k.Kind == tool.ItemKind))
+        {
+            if (await kind.ScopeNamedAsync(read, ct) is { } scope)
+            {
+                return scope;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>A scope's key, as a question names where a change lands.</summary>
+    private async Task<string?> ScopeKeyAsync(Guid scopeId, CancellationToken ct) =>
+        (await services.GetRequiredService<IAgentScopes>().GetManyAsync([scopeId], ct)).GetValueOrDefault(scopeId)?.Key;
 
     private static string Cut(string text, int max = MaxOutput) => text.Length > max ? text[..max] : text;
 }
