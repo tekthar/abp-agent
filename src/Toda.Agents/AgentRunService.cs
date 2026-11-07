@@ -271,7 +271,8 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
         IReadOnlyDictionary<Guid, AgentPerson> people = await accounts.GetManyAsync(new[] { agent.AccountId, run.StartedBy, question?.AskedOf }.OfType<Guid>(), ct);
         return new AgentRunInfo(run.Id, agent.Id, agent.Key, people.GetValueOrDefault(agent.AccountId), run.ItemKind, item?.Key, run.Trigger,
             run.StartedBy is { } s ? people.GetValueOrDefault(s) : null, run.State, run.Outside, run.Wide, run.ChangeSetId, run.Turns, run.ToolCalls, run.Cost,
-            answer ? run.Answer : null, run.Error, run.CreatedAt, run.StartedAt, run.EndedAt, transcript && !run.TranscriptGone,
+            // Cleaned again as it's read, for answers kept before they were cleaned as they're kept.
+            answer && run.Answer is { } said ? AgentText.Clean(said) : null, run.Error, run.CreatedAt, run.StartedAt, run.EndedAt, transcript && !run.TranscriptGone,
             seesSteps
                 ? [.. steps.Select(x => new AgentRunStepInfo(x.Number, x.Kind, x.Name, x.Target, x.Outcome, transcript ? x.Input : null, transcript ? x.Output : null,
                     x.StartedAt, x.EndedAt) { Allowed = x.Allowed })]

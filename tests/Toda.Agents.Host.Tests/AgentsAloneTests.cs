@@ -63,7 +63,8 @@ public sealed class AgentsAloneTests : IAsyncLifetime
 
         JsonElement run = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Triage it" }));
         Assert.Equal("done", run.GetProperty("state").GetString());
-        Assert.Equal("I set it to high. ![chart](https://x.example/c.png)", run.GetProperty("answer").GetString());
+        // The run keeps its answer cleaned too, as it's drawn for its readers: an image from elsewhere is its text and address.
+        Assert.Equal("I set it to high. chart (https://x.example/c.png)", run.GetProperty("answer").GetString());
         Assert.True(Tools(run) is ["get_ticket:done", "set_priority:done"], run.ToString());
         Assert.True(run.GetProperty("transcript").GetBoolean());
 
@@ -107,6 +108,25 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         JsonElement after = await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben);
         Assert.Equal("normal", after.GetProperty("priority").GetString());
         Assert.True(after.GetProperty("notes")[0].GetProperty("internal").GetBoolean());
+    }
+
+    [Fact]
+    public async Task A_first_change_beyond_the_runs_desk_asks_before_it_runs_whatever_the_settings_say()
+    {
+        // The agent's settings let set_priority run, and the run has read nothing yet: the change names another desk's
+        // ticket, so it asks first and the run is marked as reaching beyond its desk.
+        string elsewhere = await TicketAsync(Ben, "OPS", "Someone else's");
+        string agent = await SetUpAgentAsync("reacher", $$"""
+            demo: set_priority {"key":"{{elsewhere}}","priority":"high"}
+            demo-answer: Done.
+            """);
+        string ticket = await TicketAsync(Ben, "DESK", "Here");
+
+        JsonElement waiting = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
+        Assert.Equal("waiting", waiting.GetProperty("state").GetString());
+        Assert.True(Tools(waiting) is ["set_priority:asked"], waiting.ToString());
+        Assert.True(waiting.GetProperty("wide").GetBoolean());
+        Assert.NotEqual("high", (await SendAsync(HttpMethod.Get, $"/api/tickets/{elsewhere}", Ben)).GetProperty("priority").GetString());
     }
 
     [Fact]

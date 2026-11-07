@@ -328,6 +328,14 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         string? allowed = null;
         if (!reads)
         {
+            // A change beyond the run's scope asks before it's made, not after: what it names is looked up first, and a
+            // run that reaches beyond its scope is marked as having done so, so neither its settings nor a standing
+            // permission (both its scope's) let the change run.
+            if (await ScopeOfAsync(tool, input, ct) is { } scope && scope != run.ScopeId)
+            {
+                await SetMarksAsync(run.Id, new AgentBrought(false, true), ct);
+            }
+
             var marks = await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == run.Id).Select(r => new { r.Outside, r.Wide }).FirstAsync(ct), cancellationToken: ct);
             allowed = marks.Outside || marks.Wide ? null
                 : agent.Tools.GetValueOrDefault(tool.Name) == AgentToolSettings.Run ? AgentAllowances.Settings
@@ -432,6 +440,12 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     {
         if (tool.Reach == AgentToolReach.Inside)
         {
+            // A tool that reads only inside a scope still reads another one when it's told to: its input names it.
+            if (await NamedScopeAsync(input, ct) is { } named && named != run.ScopeId)
+            {
+                await SetMarksAsync(run.Id, new AgentBrought(false, true), ct);
+            }
+
             return;
         }
 
@@ -442,7 +456,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         }
 
         HashSet<(string Key, string? Kind)> keys = [];
-        if (Target(input) is { } target)
+        if (ItemKey(input) is { } target)
         {
             keys.Add((target, tool.ItemKind));
         }
@@ -480,9 +494,9 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     }
 
     /// <summary>
-    /// Item keys an answer holds: each "key" or "recordKey" that has a kind's key shape, anywhere in it (at most 200). A
-    /// "key" is of the kind that claims the object it's in, else the enclosing object's, else the tool's; else, and for a
-    /// "recordKey", of no known kind.
+    /// Item keys an answer holds: each "key", "recordKey" or "record" that has a kind's key shape, anywhere in it (at most
+    /// 200). A "key" is of the kind that claims the object it's in, else the enclosing object's, else the tool's; else, and
+    /// for a "recordKey" or a "record", of no known kind.
     /// </summary>
     private void Keys(JsonNode? node, string? kindHere, HashSet<(string Key, string? Kind)> keys)
     {
@@ -498,9 +512,9 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
                 string? kind = claiming.Count == 1 ? claiming[0].Kind : claiming.Count > 1 ? null : kindHere;
                 foreach ((string name, JsonNode? value) in o)
                 {
-                    if (name is "key" or "recordKey" && value is JsonValue v && v.TryGetValue(out string? key) && Kinds().Any(k => k.IsKey(key)))
+                    if (name is "key" or "recordKey" or "record" && value is JsonValue v && v.TryGetValue(out string? key) && Kinds().Any(k => k.IsKey(key)))
                     {
-                        // A "recordKey" names another item than the object it's in: every kind whose key shape fits looks at it.
+                        // A "recordKey" or "record" names another item than the object it's in: every kind whose key shape fits looks at it.
                         keys.Add((key, name == "key" ? kind : null));
                     }
                     else
@@ -628,7 +642,9 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         await agentsDb.RunAsync(async db =>
         {
             AgentRun run = await db.AgentRuns.FirstAsync(r => r.Id == runId, ct);
-            (run.State, run.Error, run.Answer, run.EndedAt) = (state, error, answer is null ? null : Cut(answer, 20_000), DateTime.UtcNow);
+            // Cleaned as the run's own copy is kept, as the copy it posts is: its readers see it drawn as Markdown, so an
+            // image from elsewhere it was steered into writing could carry what it read out by being displayed.
+            (run.State, run.Error, run.Answer, run.EndedAt) = (state, error, answer is null ? null : AgentText.Clean(Cut(answer, 20_000)), DateTime.UtcNow);
             await db.SaveChangesAsync(ct);
         }, requiresNew: true, cancellationToken: ct);
         await line.EndedAsync(runId, ct);
@@ -660,9 +676,49 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     private static string Text(JsonObject message) => string.Concat((message["content"] as JsonArray ?? [])
         .Where(b => (string?)b?["type"] == "text").Select(b => (string?)b?["text"] ?? ""));
 
+    /// <summary>
+    /// What a tool call is about, as its question and "Allow for this run" name it: the item its input names, else the
+    /// scope it makes something in (create_record's project), so allowing one never allows the same in another scope.
+    /// </summary>
+    private static string? Target(JsonNode input) => ItemKey(input) ?? ScopeKey(input);
+
     /// <summary>The item a tool call is about, when its input names one.</summary>
-    private static string? Target(JsonNode input) =>
+    private static string? ItemKey(JsonNode input) =>
         input is JsonObject o && (o["key"] ?? o["recordKey"] ?? o["record"]) is JsonValue v && v.TryGetValue(out string? key) && key.Length <= 64 ? key : null;
+
+    /// <summary>The scope a tool call's input names by key ("project", or an asset schema's "schema"), when it names one.</summary>
+    private static string? ScopeKey(JsonNode input) =>
+        input is JsonObject o && (o["project"] ?? o["schema"]) is JsonValue v && v.TryGetValue(out string? key) && key.Length is > 0 and <= 64 ? key.Trim() : null;
+
+    /// <summary>
+    /// The scope a call that changes things lands in: its item's (looked up by the tool's kind, or by every kind its key's
+    /// shape fits), else the scope its input names. Null when it names neither, or nothing by that key is there.
+    /// </summary>
+    private async Task<Guid?> ScopeOfAsync(AgentTool tool, JsonNode input, CancellationToken ct)
+    {
+        if (ItemKey(input) is { } key)
+        {
+            foreach (IAgentItemKind kind in Kinds().Where(k => (tool.ItemKind is null || k.Kind == tool.ItemKind) && k.IsKey(key)))
+            {
+                if (await kind.FindAsync(key, ct) is { } found)
+                {
+                    return found.ScopeId;
+                }
+            }
+        }
+
+        return await NamedScopeAsync(input, ct);
+    }
+
+    /// <summary>
+    /// The scope a call's input names as its "project", by the host's scopes; null when it names none that's there. (An
+    /// asset schema's tools name items by key, which their kind looks up.)
+    /// </summary>
+    private async Task<Guid?> NamedScopeAsync(JsonNode input, CancellationToken ct) =>
+        input is JsonObject o && o["project"] is JsonValue v && v.TryGetValue(out string? key) && key.Trim() is { Length: > 0 and <= 64 } project
+        && (await services.GetRequiredService<IAgentScopes>().FindManyAsync([project.ToUpperInvariant()], ct)).Values.FirstOrDefault() is { } scope
+            ? scope.Id
+            : null;
 
     private static string Cut(string text, int max = MaxOutput) => text.Length > max ? text[..max] : text;
 }

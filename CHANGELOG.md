@@ -13,6 +13,16 @@ All notable changes to Toda Agents are written here. The format follows
   agent's account is made with the agent's names, the name as written being its English one (else its first), and is
   renamed when an update changes the agent's names.
 
+### Security
+
+- A run's answer is cleaned as it's kept and as it's read, as the copy it posts is: an image from elsewhere it was
+  steered into writing no longer loads where the answer is drawn.
+- A change beyond the run's scope asks before it runs: its item, or the `project` it makes something in, is looked up
+  first and the run is marked as reaching beyond its scope, so neither the agent's settings nor a standing permission
+  lets it through. "Allow for this run" names the project when the call names no item.
+- Item keys in a tool's answer are read from `record` too, and a tool that reads only inside a scope marks the run as
+  reaching beyond it when its input names another `project`.
+
 ## [0.1.0-preview.1] - 2026-11-03
 
 The first release as packages, after agents ran in Toda on its records and assets.
