@@ -337,3 +337,22 @@ public sealed partial class ScriptedModel : IAgentModels, ITransientDependency
     [GeneratedRegex(@"<ticket key=""(?<key>[^""]+)"">", RegexOptions.None, TimeoutMilliseconds)]
     private static partial Regex TicketKey();
 }
+
+/// <summary>
+/// The sample's step outputs (ADR 0099): a run started for a step ("step:…") may end by "solved", or by its usual exit,
+/// only once its ticket's priority is high; "escalated" needs nothing.
+/// </summary>
+public sealed class SampleExitChecks(SampleDb sampleDb) : IAgentExitChecks, ITransientDependency
+{
+    public async Task<IReadOnlyList<string>> MissingAsync(AgentExitCheck check, CancellationToken cancellationToken)
+    {
+        if (check.Cause?.StartsWith("step:", StringComparison.Ordinal) != true || check.Item is not { Kind: TicketItems.ItemKind } item || check.Exit is "escalated")
+        {
+            return [];
+        }
+
+        string priority = await sampleDb.RunAsync(db => db.Tickets.AsNoTracking().Where(t => t.Id == item.Id).Select(t => t.Priority).FirstAsync(cancellationToken),
+            cancellationToken);
+        return priority == "high" ? [] : [$"{item.Key}'s priority set to high (set_priority)"];
+    }
+}

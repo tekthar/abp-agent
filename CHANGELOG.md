@@ -8,6 +8,12 @@ All notable changes to Toda Agents are written here. The format follows
 
 ### Added
 
+- What a step needs before it ends (ADR 0099): `IAgentExitChecks` and `AgentExitCheck`. A run with a cause asks the host
+  before it ends by an exit; `finish_step` is refused with what's missing, and a final answer is answered with it, at
+  most `AgentRunner.MaxReminders` times. With no host check registered nothing changes. The sample host has one, with a
+  host test.
+- Every agent's instructions say where its work goes: each place the request names, with its tools, then a short note;
+  with none named, the answer is the work.
 - Tools that reach outside (ADR 0096): `AgentToolReach.Outside` marks the run as having read outside content and nothing
   beyond its scope; `AgentTool.AlwaysAsks` makes a change undo can't take back ask every time, never allowed for the run
   or always; `AgentTool.OptIn` offers a tool only once the agent's settings name it.

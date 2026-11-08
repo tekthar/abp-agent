@@ -410,6 +410,47 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task An_exit_whose_outputs_are_missing_is_refused_until_they_are_made_and_a_run_ending_without_them_is_reminded_twice()
+    {
+        // The step's "solved" needs the priority high (the sample's check, ADR 0099): finish_step is refused with what's
+        // missing, the agent makes it, and the second finish_step is taken.
+        string agent = await SetUpAgentAsync("closer", """
+            demo: finish_step {"exit":"solved"}
+            demo: set_priority {"key":"$ticket","priority":"high"}
+            demo: finish_step {"exit":"solved"}
+            demo-answer: Solved.
+            """);
+        string ticket = await TicketAsync(Ben, "DESK", "Close it");
+        using IServiceScope scope = _factory!.Services.CreateScope();
+        AgentRunService runs = scope.ServiceProvider.GetRequiredService<AgentRunService>();
+        AgentItemRef item = (await scope.ServiceProvider.GetServices<IAgentItemKind>().First(k => k.Kind == "ticket").FindAsync(ticket, default))!;
+        AgentStartResult started = await runs.StartAsync(new AgentStart(Guid.Parse(agent), "ticket", item.Id, AgentTriggers.Workflow, null, "Solve it", "step:1")
+        {
+            Exits = ["solved", "escalated"],
+        }, default);
+        await FinishedAsync(await SendAsync(HttpMethod.Get, $"/api/agent-runs/{started.RunId}", Admin));
+        JsonElement run = await SendAsync(HttpMethod.Get, $"/api/agent-runs/{started.RunId}", Admin);
+        Assert.True(Tools(run) is ["finish_step:failed", "set_priority:done", "finish_step:done"], run.ToString());
+        JsonElement refused = run.GetProperty("steps").EnumerateArray().First(s => s.GetProperty("kind").GetString() == "tool");
+        Assert.Contains("priority set to high", refused.GetProperty("output").GetString());
+        Assert.Equal("done", run.GetProperty("state").GetString());
+
+        // A run that answers without it is told what's missing, twice, then ends as it is (the host's step decides what then).
+        string forgetful = await SetUpAgentAsync("forgetful", "demo-answer: Done.");
+        string other = await TicketAsync(Ben, "DESK", "Forget it");
+        AgentItemRef second = (await scope.ServiceProvider.GetServices<IAgentItemKind>().First(k => k.Kind == "ticket").FindAsync(other, default))!;
+        started = await runs.StartAsync(new AgentStart(Guid.Parse(forgetful), "ticket", second.Id, AgentTriggers.Workflow, null, "Solve it", "step:2"), default);
+        await FinishedAsync(await SendAsync(HttpMethod.Get, $"/api/agent-runs/{started.RunId}", Admin));
+        run = await SendAsync(HttpMethod.Get, $"/api/agent-runs/{started.RunId}", Admin);
+        Assert.Equal("done", run.GetProperty("state").GetString());
+        Assert.Equal(1 + AgentRunner.MaxReminders, run.GetProperty("turns").GetInt32());
+
+        // A run that wasn't started for a step isn't checked at all.
+        JsonElement asked = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{other}/agent-runs", Ben, new { agentId = forgetful, prompt = "Go" }));
+        Assert.Equal(1, asked.GetProperty("turns").GetInt32());
+    }
+
+    [Fact]
     public async Task Always_allow_is_only_for_the_hosts_own_tools_and_a_standing_permission_is_listed_used_and_taken_back()
     {
         string agent = await SetUpAgentAsync("mailer", """

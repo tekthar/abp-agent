@@ -43,6 +43,18 @@ show. Beside the agent, the item, the trigger, the prompt and who started it (`S
 | `ActorId` | whose rights a run no person started uses, when not the agent's own role: a rule's actor, a workflow's account. The run still counts as the system's for asking first: its questions go to the agent's responsible person, and no one's standing permissions apply |
 | `Sender` | who outside the team started it (a customer's mention): one sender's runs are capped per day |
 
+**What a step needs before it ends.** Register `IAgentExitChecks` and the package asks it before a run with a `Cause`
+ends by an exit: the run's id, cause and item, the exit (null for the step's usual one) and when the run started. Answer
+with what's still missing, in words the agent can act on ("the field Risk filled in (update_record)"); nothing missing,
+an empty list. A `finish_step` whose exit isn't ready is refused with what's missing, and a final answer is answered with
+it, at most `AgentRunner.MaxReminders` (2) times; after that the run ends as it is, and your step decides (Toda's leaves
+by "failed"). Without a registration nothing is checked. The sample host's `SampleExitChecks` wants a ticket's priority
+high before "solved".
+
+Every agent's instructions also say where its work goes: in each place the request names (a field, a comment, the
+description, a document, an item under this one), with its tools, then a short note of what it did; with no place named,
+its answer is the work, posted on the item.
+
 A run doesn't start, and says why, when agents are off, the agent is paused or its scope hasn't taken it on, whoever
 started it (or whose rights it would use) can't read the item, the cause has a run already, the agent's own act caused
 it, or a day's cap is reached. Past a cap, `IAgentEvents.RunsCappedAsync`

@@ -196,6 +196,21 @@ public interface IAgentModels
     Task<AgentModelReply> CompleteAsync(AgentModelRequest request, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// A run about to end by an exit (ADR 0099): the run, what started it (its cause), its item, the exit (null: the
+/// step's usual one), and when it started, so what it made since can be told apart.
+/// </summary>
+public sealed record AgentExitCheck(Guid RunId, string? Cause, AgentItemRef? Item, string? Exit, DateTime Since);
+
+/// <summary>
+/// What a run must have made before it ends by an exit (ADR 0099), as the host's workflow step says: each missing
+/// output in words the agent can act on. A host with none registered checks nothing.
+/// </summary>
+public interface IAgentExitChecks
+{
+    Task<IReadOnlyList<string>> MissingAsync(AgentExitCheck check, CancellationToken cancellationToken);
+}
+
 /// <summary>A run to work in the background: its id, a title for the host's job list, who started it, and where.</summary>
 public sealed record AgentRunWork(Guid RunId, string Title, Guid? StartedBy, Guid ScopeId);
 

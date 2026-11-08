@@ -98,6 +98,15 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = message["content"]?.DeepClone() });
         if ((string?)message["stop_reason"] != "tool_use")
         {
+            // The step's outputs for its exit, before it ends (ADR 0099): what's missing goes back to the agent, at most twice.
+            if (await MissingAsync(run, item, run.Exit, cancellationToken) is { Count: > 0 } missing && Reminders(messages) < MaxReminders)
+            {
+                messages.Add(new JsonObject { ["role"] = "user", ["content"] = $"{StepNeeds}Before you finish, the step needs: {string.Join("; ", missing)}. "
+                    + "Make them with your tools, then answer.</step-needs>" });
+                await SaveAsync(runId, messages, 0, cancellationToken);
+                return new AgentTurn(false, run.Turns + 1);
+            }
+
             string answer = Text(message);
             await AnswerAsync(run, agent, item, answer, cancellationToken);
             await SaveAsync(runId, messages, 0, cancellationToken);
@@ -270,6 +279,21 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     /// <summary>The agent's own tool for choosing how a workflow's step ends (ADR 0086 step 4).</summary>
     public const string FinishStep = "finish_step";
 
+    /// <summary>How many times a run is told what its step still needs before it may end anyway (ADR 0099).</summary>
+    public const int MaxReminders = 2;
+
+    private const string StepNeeds = "<step-needs>";
+
+    /// <summary>What the host says the run must still make before it ends by this exit (null: its step's usual one); none without a host check.</summary>
+    private async Task<IReadOnlyList<string>> MissingAsync(AgentRun run, AgentItemRef? item, string? exit, CancellationToken ct) =>
+        services.GetService<IAgentExitChecks>() is { } checks && run.Cause is not null
+            ? await checks.MissingAsync(new AgentExitCheck(run.Id, run.Cause, item, exit, run.StartedAt ?? run.CreatedAt), ct)
+            : [];
+
+    /// <summary>How many times this run has been told what its step still needs.</summary>
+    private static int Reminders(JsonArray messages) =>
+        messages.Count(m => (string?)m?["role"] == "user" && m?["content"] is JsonValue v && v.TryGetValue(out string? text) && text.StartsWith(StepNeeds, StringComparison.Ordinal));
+
     /// <summary>The host's tools the agent may use (not off in its settings), and finish_step when the run was given exits.</summary>
     private async Task<List<AgentTool>> OfferedAsync(AgentRun run, Agent agent, CancellationToken ct)
     {
@@ -319,7 +343,13 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         {
             string? exit = input is JsonObject o && o["exit"] is JsonValue v && v.TryGetValue(out string? chosen) && exits.Contains(chosen) ? chosen : null;
             string said = exit is null ? $"The step's exits are {string.Join(", ", exits)}: choose one of them." : $"The step will end by \"{exit}\" when you answer.";
-            if (exit is not null)
+            // An exit whose outputs aren't all there yet isn't taken (ADR 0099): the agent hears what's missing, makes it, and asks again.
+            if (exit is not null && await MissingAsync(run, item, exit, ct) is { Count: > 0 } missing)
+            {
+                said = $"Before the step can end by \"{exit}\", it needs: {string.Join("; ", missing)}. Make them, then call {FinishStep} again.";
+                exit = null;
+            }
+            else if (exit is not null)
             {
                 await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == run.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.Exit, exit), ct), cancellationToken: ct);
             }
@@ -690,8 +720,17 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         string name = agent.Names.GetValueOrDefault("en") ?? agent.Names.Values.FirstOrDefault() ?? agent.Key;
         string title = agent.Titles.GetValueOrDefault("en") ?? agent.Titles.Values.FirstOrDefault() ?? "";
         return $"You are {name}{(title.Length > 0 ? $", {title}," : "")} an agent working in {options.Value.ProductName} for the person who asked, with their rights and under your own name.\n\n"
-            + agent.Instructions + "\n\n" + DataNotInstructions(noun);
+            + agent.Instructions + "\n\n" + WhereWorkGoes(noun) + "\n\n" + DataNotInstructions(noun);
     }
+
+    /// <summary>
+    /// Where a run's work goes (ADR 0099): where the words say, every place they name, with the tools it has; its answer
+    /// is then a note of what it did, and the work itself when nothing names a place.
+    /// </summary>
+    internal static string WhereWorkGoes(string noun) =>
+        $"Where your work goes: when your instructions or the request name places for it (a field, a comment, the description, a document, a record "
+        + $"under this {noun}), put it in each place they name, with your tools. Then end with a short note of what you did and where. When they name "
+        + $"no place, your answer is the work: it goes on the {noun} as a comment.";
 
     /// <summary>The text blocks of a reply, joined.</summary>
     private static string Text(JsonObject message) => string.Concat((message["content"] as JsonArray ?? [])

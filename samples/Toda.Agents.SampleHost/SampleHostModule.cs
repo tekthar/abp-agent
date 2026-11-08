@@ -27,6 +27,7 @@ public class SampleHostModule : AbpModule
         context.Services.Replace(ServiceDescriptor.Transient<IAgentScopes, SampleScopes>());
         context.Services.Replace(ServiceDescriptor.Transient<IAgentTools, SampleTools>());
         context.Services.Replace(ServiceDescriptor.Transient<IAgentModels, ScriptedModel>());
+        context.Services.Replace(ServiceDescriptor.Transient<IAgentExitChecks, SampleExitChecks>());
         // The agents' refusals say what they are: a refusal is 403, a run still going 409.
         Configure<AbpExceptionHttpStatusCodeOptions>(options =>
         {
