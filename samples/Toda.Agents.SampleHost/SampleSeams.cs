@@ -302,7 +302,12 @@ public sealed partial class ScriptedModel : IAgentModels, ITransientDependency
         List<(string Tool, string Input)> script = [.. Line().Matches(request.System).Select(m => (m.Groups["tool"].Value, m.Groups["input"].Value.Trim()))];
         JsonArray messages = JsonNode.Parse(request.Messages.GetRawText())!.AsArray();
         int done = messages.Count(m => (string?)m?["role"] == "assistant" && m?["content"] is JsonArray c && c.Any(b => (string?)b?["type"] == "tool_use"));
-        string ticket = TicketKey().Match((string?)messages.FirstOrDefault()?["content"] ?? "") is { Success: true } k ? k.Groups["key"].Value : "";
+        // The run's ticket, in its first message of its own: after a chat's earlier turns (ADR 0102), the last plain message that names one.
+        string ticket = messages.Select(m => m?["content"] is JsonValue v && v.TryGetValue(out string? text) ? TicketKey().Match(text) : null)
+            .LastOrDefault(m => m is { Success: true }) is { } k ? k.Groups["key"].Value : "";
+        // Which message of its chat a run answers (ADR 0102), 1 for a run alone: how many requests it was given, so a test sees the chat carried.
+        string turn = Math.Max(1, messages.Count(m => (string?)m?["role"] == "user" && m?["content"] is JsonValue v && v.TryGetValue(out string? text)
+            && text.StartsWith("<request>", StringComparison.Ordinal))).ToString(System.Globalization.CultureInfo.InvariantCulture);
         JsonObject message;
         if (done < script.Count)
         {
@@ -312,13 +317,14 @@ public sealed partial class ScriptedModel : IAgentModels, ITransientDependency
                 ["role"] = "assistant", ["stop_reason"] = "tool_use",
                 ["content"] = new JsonArray(new JsonObject
                 {
-                    ["type"] = "tool_use", ["id"] = $"call_{done + 1}", ["name"] = tool, ["input"] = JsonNode.Parse(input.Replace("$ticket", ticket)),
+                    ["type"] = "tool_use", ["id"] = $"call_{done + 1}", ["name"] = tool, ["input"] = JsonNode.Parse(input.Replace("$ticket", ticket).Replace("$turn", turn)),
                 }),
             };
         }
         else
         {
-            string answer = Answer().Match(request.System) is { Success: true } a ? a.Groups["text"].Value.Trim() : "Done.";
+            string answer = (Answer().Match(request.System) is { Success: true } a ? a.Groups["text"].Value.Trim() : "Done.")
+                .Replace("$turn", turn, StringComparison.Ordinal);
             message = new JsonObject
             {
                 ["role"] = "assistant", ["stop_reason"] = "end_turn", ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = answer }),

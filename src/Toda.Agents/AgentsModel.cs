@@ -23,6 +23,7 @@ public interface IAgentsDbContext : IEfCoreDbContext
     DbSet<AgentRunStep> AgentRunSteps { get; }
     DbSet<AgentQuestion> AgentQuestions { get; }
     DbSet<AgentPermission> AgentPermissions { get; }
+    DbSet<AgentChat> AgentChats { get; }
 }
 
 /// <summary>Runs the agents' work in a unit of work: the caller's when there is one, or a new one.</summary>
@@ -113,6 +114,18 @@ public static class AgentsModel
             b.HasIndex(x => new { x.State, x.LeasedUntil });
             b.HasIndex(x => new { x.AgentId, x.Cause });
             b.HasIndex(x => new { x.Sender, x.CreatedAt }); // a sender's runs in a day (ADR 0086 section 7)
+            b.HasIndex(x => new { x.ChatId, x.CreatedAt }); // a chat's runs (ADR 0102)
+        });
+
+        // People's chats with agents (ADR 0102): each message is a run in agent_runs with its ChatId.
+        builder.Entity<AgentChat>(b =>
+        {
+            b.ToTable("agent_chats", Schema);
+            b.Property(x => x.Id).ValueGeneratedNever();
+            b.Property(x => x.ItemKind).HasMaxLength(ItemKindLength);
+            b.Property(x => x.Title).HasMaxLength(AgentChat.TitleLength).IsRequired();
+            b.HasIndex(x => new { x.PersonId, x.LastAt });
+            b.HasIndex(x => x.AgentId);
         });
 
         builder.Entity<AgentRunStep>(b =>

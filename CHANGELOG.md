@@ -8,6 +8,12 @@ All notable changes to Toda Agents are written here. The format follows
 
 ### Added
 
+- Chats (ADR 0102): `AgentChat` (`agents.agent_chats`, a new `IAgentsDbContext.AgentChats`), `AgentChatService`
+  (places, list, start, send, get, post, delete, and `ForgetAsync` for erasure), the trigger `AgentTriggers.Chat`, and
+  `AgentRun.ChatId` and `PostedAt`. A chat's run gets the chat so far, starts marked as its earlier runs were, and keeps
+  its reply in the chat until the person posts it. `AgentRunInfo` now carries `Prompt` (for transcript readers),
+  `ChatId` and `PostedAt`; `AgentRunStepInfo.Writes` says whether a step could change things. The sample host has the
+  routes and two host tests.
 - What a step needs before it ends (ADR 0099): `IAgentExitChecks` and `AgentExitCheck`. A run with a cause asks the host
   before it ends by an exit; `finish_step` is refused with what's missing, and a final answer is answered with it, at
   most `AgentRunner.MaxReminders` times. With no host check registered nothing changes. The sample host has one, with a

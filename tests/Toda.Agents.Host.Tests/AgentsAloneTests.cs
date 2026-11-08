@@ -550,6 +550,119 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         Assert.Contains("runs it may start in a day", fourth.Why);
     }
 
+    [Fact]
+    public async Task A_chat_is_its_persons_own_carries_what_was_said_and_keeps_its_replies_until_they_post_one()
+    {
+        // ADR 0102: each message is a run with the person's rights that gets the chat so far ($turn: which message it answers).
+        string agent = await SetUpAgentAsync("chatty", """
+            demo: get_ticket {"key":"$ticket"}
+            demo-answer: Reply $turn.
+            """);
+        string ticket = await TicketAsync(Ben, "DESK", "Printer on fire");
+
+        JsonElement places = await SendAsync(HttpMethod.Get, "/api/agent-chats/places", Ben);
+        Assert.Contains(places.EnumerateArray(), p => p.GetProperty("scope").GetProperty("key").GetString() == "DESK"
+            && p.GetProperty("agents").EnumerateArray().Any(a => a.GetProperty("id").GetString() == agent));
+
+        JsonElement chat = await SendAsync(HttpMethod.Post, "/api/agent-chats", Ben, new { agentId = agent, ticket, prompt = "What's this about?" });
+        string id = chat.GetProperty("chat").GetProperty("id").GetString()!;
+        Assert.Equal(ticket, chat.GetProperty("chat").GetProperty("itemKey").GetString());
+        JsonElement first = await FinishedAsync(chat.GetProperty("runs")[0]);
+        Assert.Equal("chat", first.GetProperty("trigger").GetString());
+        Assert.Equal("What's this about?", first.GetProperty("prompt").GetString());
+        Assert.Equal("Reply 1.", first.GetProperty("answer").GetString());
+
+        // The next message's run gets the first exchange: it answers the second message.
+        JsonElement said = await SendAsync(HttpMethod.Post, $"/api/agent-chats/{id}/messages", Ben, new { prompt = "And now?" });
+        JsonElement second = await FinishedAsync(said.GetProperty("runs")[1]);
+        Assert.Equal("Reply 2.", second.GetProperty("answer").GetString());
+
+        // Private: nothing went on the ticket, Cy can't open the chat, sees neither reply, and the ticket's runs leave out
+        // the chat's runs, which changed nothing there.
+        Assert.Equal(0, (await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben)).GetProperty("notes").GetArrayLength());
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await RawAsync(HttpMethod.Get, $"/api/agent-chats/{id}", Cy)).StatusCode);
+        Assert.Equal(JsonValueKind.Null, (await SendAsync(HttpMethod.Get, $"/api/agent-runs/{second.GetProperty("id").GetString()}", Cy)).GetProperty("answer").ValueKind);
+        Assert.Equal(0, (await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}/agent-runs", Cy)).GetArrayLength());
+        Assert.Equal(0, (await SendAsync(HttpMethod.Get, "/api/agent-chats", Cy)).GetArrayLength());
+        JsonElement mine = await SendAsync(HttpMethod.Get, "/api/agent-chats", Ben);
+        Assert.Equal("What's this about?", mine[0].GetProperty("title").GetString());
+
+        // Ben posts the second reply, once: a note by Ben, run by the agent, in that run's change set.
+        JsonElement now = await SendAsync(HttpMethod.Get, $"/api/agent-chats/{id}", Ben);
+        Assert.Equal(2, now.GetProperty("postable").GetArrayLength());
+        JsonElement posted = await SendAsync(HttpMethod.Post, $"/api/agent-chats/{id}/runs/{second.GetProperty("id").GetString()}/post", Ben);
+        Assert.Equal(1, posted.GetProperty("postable").GetArrayLength());
+        JsonElement note = (await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben)).GetProperty("notes")[0];
+        Assert.Equal("Reply 2.", note.GetProperty("body").GetString());
+        Assert.Equal(second.GetProperty("agent").GetProperty("id").GetString(), note.GetProperty("actingAccountId").GetString());
+        Assert.Equal(second.GetProperty("changeSetId").GetString(), note.GetProperty("changeSetId").GetString());
+        Assert.Equal(System.Net.HttpStatusCode.Conflict,
+            (await RawAsync(HttpMethod.Post, $"/api/agent-chats/{id}/runs/{second.GetProperty("id").GetString()}/post", Ben)).StatusCode);
+
+        // Deleting it: gone from the list; its runs keep who and each step's outcome, not what was said.
+        Assert.True((await RawAsync(HttpMethod.Delete, $"/api/agent-chats/{id}", Ben)).IsSuccessStatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await RawAsync(HttpMethod.Get, $"/api/agent-chats/{id}", Ben)).StatusCode);
+        JsonElement forgotten = await SendAsync(HttpMethod.Get, $"/api/agent-runs/{first.GetProperty("id").GetString()}", Ben);
+        Assert.Equal("", forgotten.GetProperty("prompt").GetString());
+        Assert.Equal(JsonValueKind.Null, forgotten.GetProperty("answer").ValueKind);
+        Assert.Equal(["get_ticket:done"], Tools(forgotten));
+        Assert.Null(ToolSteps(forgotten)[0].GetProperty("output").GetString());
+    }
+
+    [Fact]
+    public async Task A_chats_next_run_starts_marked_as_its_earlier_ones_and_waits_for_the_last_to_end()
+    {
+        // A chat about Ben's own ticket. The first message's run reads a customer's ticket; the second's reads only Ben's
+        // own. It still asks before its change, which its settings let run: it got what the first one said.
+        string customers = await TicketAsync(Ben, "DESK", "Please help", fromCustomer: true);
+        string own = await TicketAsync(Ben, "DESK", "Ours");
+        Assert.Equal(("DESK-1", "DESK-2"), (customers, own));
+        string agent = await SetUpAgentAsync("carrier", """
+            demo: get_ticket {"key":"DESK-$turn"}
+            demo: set_priority {"key":"DESK-2","priority":"high"}
+            demo-answer: Read $turn.
+            """);
+
+        JsonElement chat = await SendAsync(HttpMethod.Post, "/api/agent-chats", Ben, new { agentId = agent, ticket = own, prompt = "Look at the first" });
+        string id = chat.GetProperty("chat").GetProperty("id").GetString()!;
+        JsonElement first = await WaitingAsync(chat.GetProperty("runs")[0]);
+        Assert.True(first.GetProperty("outside").GetBoolean());
+        await SendAsync(HttpMethod.Post, $"/api/agent-questions/{first.GetProperty("question").GetProperty("id").GetString()}/answer", Ben, new { answer = "refuse" });
+        await FinishedAsync(first);
+
+        JsonElement said = await SendAsync(HttpMethod.Post, $"/api/agent-chats/{id}/messages", Ben, new { prompt = "Now the second" });
+        JsonElement second = await WaitingAsync(said.GetProperty("runs")[1]);
+        Assert.Equal("waiting", second.GetProperty("state").GetString());
+        Assert.True(second.GetProperty("outside").GetBoolean());
+        Assert.True(Tools(second) is ["get_ticket:done", "set_priority:asked"], second.ToString());
+
+        // While it waits, the chat takes no message and can't be deleted.
+        Assert.Equal(System.Net.HttpStatusCode.Conflict, (await RawAsync(HttpMethod.Post, $"/api/agent-chats/{id}/messages", Ben, new { prompt = "Hurry" })).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.Conflict, (await RawAsync(HttpMethod.Delete, $"/api/agent-chats/{id}", Ben)).StatusCode);
+        Assert.False((await SendAsync(HttpMethod.Get, $"/api/agent-chats/{id}", Ben)).GetProperty("canSend").GetBoolean());
+
+        await SendAsync(HttpMethod.Post, $"/api/agent-questions/{second.GetProperty("question").GetProperty("id").GetString()}/answer", Ben, new { answer = "allow" });
+        JsonElement done = await FinishedAsync(second);
+        Assert.Equal("Read 2.", done.GetProperty("answer").GetString());
+        Assert.Equal("high", (await SendAsync(HttpMethod.Get, $"/api/tickets/{own}", Ben)).GetProperty("priority").GetString());
+        // The second run changed the ticket, so the ticket's runs show it to Cy, without what was said; the first changed
+        // nothing and stays out.
+        JsonElement listed = (await SendAsync(HttpMethod.Get, $"/api/tickets/{own}/agent-runs", Cy)).EnumerateArray().Single();
+        Assert.Equal(done.GetProperty("id").GetString(), listed.GetProperty("id").GetString());
+        Assert.Equal(JsonValueKind.Null, listed.GetProperty("answer").ValueKind);
+        Assert.Equal(JsonValueKind.Null, listed.GetProperty("prompt").ValueKind);
+
+        // A chat in the desk, about no ticket, has nowhere to post its replies.
+        JsonElement desk = await SendAsync(HttpMethod.Post, "/api/agent-chats", Ben, new { agentId = agent, desk = "DESK", prompt = "Anything new?" });
+        Assert.Equal(JsonValueKind.Null, desk.GetProperty("chat").GetProperty("itemKey").ValueKind);
+        await WaitingAsync(desk.GetProperty("runs")[0]);
+        await SendAsync(HttpMethod.Post, $"/api/agent-runs/{desk.GetProperty("runs")[0].GetProperty("id").GetString()}/stop", Ben);
+        JsonElement stopped = await SendAsync(HttpMethod.Get, $"/api/agent-chats/{desk.GetProperty("chat").GetProperty("id").GetString()}", Ben);
+        Assert.Equal("stopped", stopped.GetProperty("runs")[0].GetProperty("state").GetString());
+        Assert.Equal(0, stopped.GetProperty("postable").GetArrayLength());
+        Assert.True(stopped.GetProperty("canSend").GetBoolean());
+    }
+
     private static List<JsonElement> ToolSteps(JsonElement run) =>
         [.. run.GetProperty("steps").EnumerateArray().Where(s => s.GetProperty("kind").GetString() == "tool")];
 

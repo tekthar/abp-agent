@@ -84,7 +84,8 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         try
         {
             reply = await models.CompleteAsync(new AgentModelRequest(agent.AccountId, run.ScopeId, agent.ModelAlias, JsonSerializer.SerializeToElement(messages),
-                Persona(agent, item is null ? "item" : Kind(item.Kind)?.Noun ?? "item"), toolsJson, 4000, $"agent:{agent.Key}", run.ItemId), cancellationToken);
+                Persona(agent, item is null ? "item" : Kind(item.Kind)?.Noun ?? "item", run.ChatId is not null), toolsJson, 4000, $"agent:{agent.Key}", run.ItemId),
+                cancellationToken);
         }
         catch (AgentModelRefusedException ex)
         {
@@ -246,9 +247,59 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         return agent.State == AgentStates.Paused ? (AgentRunStates.Stopped, $"{agent.Key} was paused.") : null;
     }
 
-    /// <summary>The first message: the request, and the item as the run may read it, as data. Marks the run when the item holds outside content.</summary>
+    /// <summary>How many of a chat's earlier exchanges a run gets (ADR 0102), the newest, within <see cref="ChatCharacters"/>.</summary>
+    public const int ChatExchanges = 20;
+
+    /// <summary>How much of a chat's earlier exchanges a run gets, in characters.</summary>
+    public const int ChatCharacters = 60_000;
+
+    /// <summary>
+    /// A chat's earlier exchanges (ADR 0102), as the model's own turns, oldest first: each message its person sent and the
+    /// reply, the newest <see cref="ChatExchanges"/> within <see cref="ChatCharacters"/>. Earlier runs' tool calls aren't
+    /// carried: what the agent needs again it reads again, with today's rights.
+    /// </summary>
+    private async Task<JsonArray> ChatSoFarAsync(AgentRun run, CancellationToken ct)
+    {
+        var earlier = await agentsDb.RunAsync(db => db.AgentRuns.AsNoTracking()
+            .Where(r => r.ChatId == run.ChatId && r.Id != run.Id && r.CreatedAt <= run.CreatedAt)
+            .OrderByDescending(r => r.CreatedAt).Take(ChatExchanges)
+            .Select(r => new { r.Prompt, r.Answer, r.State, r.Error }).ToListAsync(ct), cancellationToken: ct);
+        List<(string Asked, string Said)> kept = [];
+        int used = 0;
+        foreach (var r in earlier)
+        {
+            string said = !string.IsNullOrWhiteSpace(r.Answer) ? r.Answer!
+                : r.State == AgentRunStates.Stopped ? "(stopped before it answered)"
+                : r.State == AgentRunStates.Failed ? $"(it failed before it answered: {r.Error})"
+                : "(no reply)";
+            int size = r.Prompt.Length + said.Length;
+            if (used + size > ChatCharacters)
+            {
+                break;
+            }
+
+            used += size;
+            kept.Add((r.Prompt, said));
+        }
+
+        kept.Reverse();
+        JsonArray turns = [];
+        foreach ((string asked, string said) in kept)
+        {
+            turns.Add(new JsonObject { ["role"] = "user", ["content"] = $"<request>\n{asked}\n</request>" });
+            turns.Add(new JsonObject { ["role"] = "assistant", ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = said }) });
+        }
+
+        return turns;
+    }
+
+    /// <summary>
+    /// The first message: the request, and the item as the run may read it, as data, after a chat's earlier exchanges.
+    /// Marks the run when the item holds outside content.
+    /// </summary>
     private async Task<JsonArray> FirstAsync(AgentRun run, Agent agent, AgentItemRef? item, CancellationToken ct)
     {
+        JsonArray messages = run.ChatId is null ? [] : await ChatSoFarAsync(run, ct);
         StringBuilder text = new();
         text.Append("<request>\n").Append(run.Prompt).Append("\n</request>");
         if (item is not null)
@@ -273,7 +324,8 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             tracked.StartedAt ??= DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
         }, cancellationToken: ct);
-        return [new JsonObject { ["role"] = "user", ["content"] = text.ToString() }];
+        messages.Add(new JsonObject { ["role"] = "user", ["content"] = text.ToString() });
+        return messages;
     }
 
     /// <summary>The agent's own tool for choosing how a workflow's step ends (ADR 0086 step 4).</summary>
@@ -593,7 +645,8 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     /// <summary>The run's answer, on its item by the person, run by the agent: for the team only once the run has read outside content.</summary>
     private async Task AnswerAsync(AgentRun run, Agent agent, AgentItemRef? item, string answer, CancellationToken ct)
     {
-        if (item is null || string.IsNullOrWhiteSpace(answer))
+        // A chat's reply stays in the chat until its person posts it (ADR 0102).
+        if (item is null || run.ChatId is not null || string.IsNullOrWhiteSpace(answer))
         {
             return;
         }
@@ -714,14 +767,23 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     private static AgentActing Acting(AgentRun run, Agent agent, bool readOnly) =>
         new(run.Id, run.ChangeSetId, agent.AccountId, run.ActorId, readOnly) { Chain = run.Chain, AgentId = agent.Id, ScopeId = run.ScopeId, StartedBy = run.StartedBy };
 
-    /// <summary>Who the agent is, its instructions, and that what it reads is data.</summary>
-    private string Persona(Agent agent, string noun)
+    /// <summary>Who the agent is, its instructions, where its work goes (in a chat, to its person), and that what it reads is data.</summary>
+    private string Persona(Agent agent, string noun, bool chat = false)
     {
         string name = agent.Names.GetValueOrDefault("en") ?? agent.Names.Values.FirstOrDefault() ?? agent.Key;
         string title = agent.Titles.GetValueOrDefault("en") ?? agent.Titles.Values.FirstOrDefault() ?? "";
         return $"You are {name}{(title.Length > 0 ? $", {title}," : "")} an agent working in {options.Value.ProductName} for the person who asked, with their rights and under your own name.\n\n"
-            + agent.Instructions + "\n\n" + WhereWorkGoes(noun) + "\n\n" + DataNotInstructions(noun);
+            + agent.Instructions + "\n\n" + (chat ? InAChat(noun) : WhereWorkGoes(noun)) + "\n\n" + DataNotInstructions(noun);
     }
+
+    /// <summary>
+    /// Where a chat's work goes (ADR 0102): the reply is for the person alone, in the chat; things change, and documents
+    /// are made, only when they ask, and the reply says what was done and where.
+    /// </summary>
+    internal static string InAChat(string noun) =>
+        "You're in a chat with the person: your reply is shown to them alone, in the chat, and goes nowhere else. Earlier turns are what they said and "
+        + "what you replied. Change things, comment or make documents only when they ask you to, with your tools, and then say what you did and where. "
+        + $"When the chat is about a {noun}, it's given to you as it is now with each message.";
 
     /// <summary>
     /// Where a run's work goes (ADR 0099): where the words say, every place they name, with the tools it has; its answer

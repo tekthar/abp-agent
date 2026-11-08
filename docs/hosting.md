@@ -55,6 +55,17 @@ Every agent's instructions also say where its work goes: in each place the reque
 description, a document, an item under this one), with its tools, then a short note of what it did; with no place named,
 its answer is the work, posted on the item.
 
+**Chats.** `AgentChatService` gives a person their own chats with an agent (ADR 0102): in a scope they may read, or
+about an item there. Each message is a run with the trigger `chat` and their rights, so every rule above holds; it gets
+the chat so far as the model's own turns (the newest 20 exchanges within 60,000 characters) and starts marked as the
+chat's earlier runs were. Its reply stays in the chat: the package doesn't post it on the item, hides it from everyone
+but the person (and your site admins, who read transcripts), and leaves chat runs off the item's run list until they
+change something there. `PostAsync` posts one reply, once, through your item kind's `AnswerAsync`; `DeleteAsync` and
+the static `ForgetAsync` (for erasing a person) leave runs who, when and each step's outcome. Your host maps
+`agents.agent_chats` (`IAgentsDbContext.AgentChats`) and gives the routes; the sample host's `agent-chats` routes and
+its two chat tests show the whole of it. You'll want to skip your own "run finished" event for `AgentTriggers.Chat`, so
+no rule acts on what someone asked in private.
+
 A run doesn't start, and says why, when agents are off, the agent is paused or its scope hasn't taken it on, whoever
 started it (or whose rights it would use) can't read the item, the cause has a run already, the agent's own act caused
 it, or a day's cap is reached. Past a cap, `IAgentEvents.RunsCappedAsync`

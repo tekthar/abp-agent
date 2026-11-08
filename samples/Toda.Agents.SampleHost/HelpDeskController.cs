@@ -20,7 +20,8 @@ public sealed record AnswerInput(string Answer);
 /// a ticket. Who's acting is the X-Account header (an account id): the sample has no sign-in, a real host has its own.
 /// </summary>
 [Route("api")]
-public class HelpDeskController(AgentService agents, AgentRunService runs, AgentPermissionService permissions, SampleDb sampleDb, SampleDirectory directory)
+public class HelpDeskController(AgentService agents, AgentRunService runs, AgentPermissionService permissions, AgentChatService chats, SampleDb sampleDb,
+    SampleDirectory directory)
     : AbpControllerBase
 {
     private AgentActor Actor => Request.Headers.TryGetValue("X-Account", out var value) && Guid.TryParse(value, out Guid id)
@@ -108,6 +109,38 @@ public class HelpDeskController(AgentService agents, AgentRunService runs, Agent
     [HttpPost("agent-permissions/remove")]
     public Task RemovePermission([FromBody] RemovePermissionInput input, CancellationToken ct) =>
         permissions.RemoveAsync(Actor, input.PersonId, input.AgentId, input.Tool, input.ScopeId, ct);
+
+    /// <summary>Where I may chat with an agent (ADR 0102): the desks I may read, with their agents.</summary>
+    [HttpGet("agent-chats/places")]
+    public Task<List<AgentChatPlace>> ChatPlaces(CancellationToken ct) => chats.PlacesAsync(Actor, ct);
+
+    /// <summary>My chats, newest first.</summary>
+    [HttpGet("agent-chats")]
+    public Task<List<AgentChatSummary>> Chats(CancellationToken ct) => chats.ListAsync(Actor, ct);
+
+    /// <summary>A new chat in a desk, or about a ticket, and its first message.</summary>
+    [HttpPost("agent-chats")]
+    public Task<AgentChatInfo> StartChat([FromBody] StartChatInput input, CancellationToken ct) =>
+        chats.StartAsync(Actor, new AgentChatStart(input.AgentId, input.Prompt)
+        {
+            ScopeKey = input.Desk, ItemKind = input.Ticket is null ? null : TicketItems.ItemKind, ItemKey = input.Ticket,
+        }, ct);
+
+    [HttpGet("agent-chats/{id:guid}")]
+    public Task<AgentChatInfo> Chat(Guid id, CancellationToken ct) => chats.GetAsync(Actor, id, ct);
+
+    [HttpPost("agent-chats/{id:guid}/messages")]
+    public Task<AgentChatInfo> Say(Guid id, [FromBody] ChatMessageInput input, CancellationToken ct) => chats.SendAsync(Actor, id, input.Prompt, ct);
+
+    [HttpPost("agent-chats/{id:guid}/runs/{runId:guid}/post")]
+    public Task<AgentChatInfo> Post(Guid id, Guid runId, CancellationToken ct) => chats.PostAsync(Actor, id, runId, ct);
+
+    [HttpDelete("agent-chats/{id:guid}")]
+    public Task DeleteChat(Guid id, CancellationToken ct) => chats.DeleteAsync(Actor, id, ct);
 }
+
+public sealed record StartChatInput(Guid AgentId, string Prompt, string? Desk = null, string? Ticket = null);
+
+public sealed record ChatMessageInput(string Prompt);
 
 public sealed record RemovePermissionInput(Guid PersonId, Guid AgentId, string Tool, Guid ScopeId);

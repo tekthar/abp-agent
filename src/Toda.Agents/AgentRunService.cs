@@ -12,6 +12,9 @@ public sealed record AgentRunStepInfo(int Number, string Kind, string Name, stri
 {
     /// <summary>What let a call that changes things run (<see cref="AgentAllowances"/>): its settings, someone's standing permission, an answer.</summary>
     public string? Allowed { get; init; }
+
+    /// <summary>Whether the tool could change things: a run whose such steps ran has something to undo.</summary>
+    public bool Writes { get; init; }
 }
 
 /// <summary>
@@ -27,6 +30,15 @@ public sealed record AgentRunInfo(
 {
     /// <summary>What it waits for an answer to, while it waits (ADR 0086 step 6).</summary>
     public AgentQuestionInfo? Question { get; init; }
+
+    /// <summary>What it was asked, in the starter's words: for those who read its transcript.</summary>
+    public string? Prompt { get; init; }
+
+    /// <summary>The chat it answers a message in (ADR 0102), if any.</summary>
+    public Guid? ChatId { get; init; }
+
+    /// <summary>When its person posted its reply on the chat's item (ADR 0102).</summary>
+    public DateTime? PostedAt { get; init; }
 }
 
 /// <summary>
@@ -88,6 +100,9 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
 {
     public const int MaxPrompt = 8_000;
 
+    /// <summary>Why a chat takes no message now (ADR 0102).</summary>
+    public const string ChatGoing = "The agent is still on your last message: wait for its reply, or stop it.";
+
     /// <summary>The site's period for transcripts, in days.</summary>
     public int TranscriptDays => Math.Max(1, options.Value.TranscriptDays);
 
@@ -104,7 +119,7 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
         AgentItemRef item = await items.FindAsync(key, ct) is { } found && (await items.AccessAsync(actor, found, ct)).Read
             ? found
             : throw new Volo.Abp.Domain.Entities.EntityNotFoundException($"There's no {items.Noun} {key}.");
-        (AgentRun? run, string? why) = await CreateAsync(agentId, item, AgentTriggers.Ask, actor.Id, prompt, null, ct);
+        (AgentRun? run, string? why) = await CreateAsync(agentId, item.ScopeId, item, AgentTriggers.Ask, actor.Id, prompt, null, ct);
         if (run is null)
         {
             throw new UserFriendlyException(why!);
@@ -164,14 +179,23 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             return new AgentStartResult(null, "The agent's own run did it.");
         }
 
-        (AgentRun? run, string? why) = await CreateAsync(start.AgentId, item, start.Trigger, start.StartedBy, prompt, start.Cause, ct,
+        (AgentRun? run, string? why) = await CreateAsync(start.AgentId, item.ScopeId, item, start.Trigger, start.StartedBy, prompt, start.Cause, ct,
             start.Exits is { Count: > 0 } exits ? [.. exits] : null, start.Chain, start.StartedBy is null ? start.ActorId : null, start.Sender);
         return new AgentStartResult(run?.Id, why);
     }
 
+    /// <summary>
+    /// A run for a person's message in their chat (ADR 0102): made with the chat when it's new, with their rights. It starts
+    /// marked as the chat's earlier runs were, since it gets what they said; none starts while the chat's last run goes.
+    /// </summary>
+    internal Task<(AgentRun? Run, string? Why)> CreateChatRunAsync(AgentChat chat, bool isNew, AgentItemRef? item, Guid personId, string prompt,
+        CancellationToken ct) =>
+        CreateAsync(chat.AgentId, chat.ScopeId, item, AgentTriggers.Chat, personId, prompt, null, ct, chat: (chat, isNew));
+
     /// <summary>The run, made and queued; or why not.</summary>
-    private async Task<(AgentRun? Run, string? Why)> CreateAsync(Guid agentId, AgentItemRef item, string trigger, Guid? startedBy, string prompt, string? cause,
-        CancellationToken ct, List<string>? exits = null, string? chain = null, Guid? actorId = null, Guid? sender = null)
+    private async Task<(AgentRun? Run, string? Why)> CreateAsync(Guid agentId, Guid scopeId, AgentItemRef? item, string trigger, Guid? startedBy, string prompt,
+        string? cause, CancellationToken ct, List<string>? exits = null, string? chain = null, Guid? actorId = null, Guid? sender = null,
+        (AgentChat Chat, bool IsNew)? chat = null)
     {
         (AgentRun? run, string? why, AgentRunsCapped? capped) = await agentsDb.RunAsync<(AgentRun?, string?, AgentRunsCapped?)>(async db =>
         {
@@ -182,9 +206,9 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
 
             Agent agent = await db.Agents.AsNoTracking().FirstOrDefaultAsync(a => a.Id == agentId, ct)
                 ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException(typeof(Agent), agentId);
-            if (!await db.AgentScopes.AnyAsync(p => p.AgentId == agent.Id && p.ScopeId == item.ScopeId, ct))
+            if (!await db.AgentScopes.AnyAsync(p => p.AgentId == agent.Id && p.ScopeId == scopeId, ct))
             {
-                string scope = (await scopes.GetManyAsync([item.ScopeId], ct)).GetValueOrDefault(item.ScopeId)?.Key ?? "Its scope";
+                string scope = (await scopes.GetManyAsync([scopeId], ct)).GetValueOrDefault(scopeId)?.Key ?? "Its scope";
                 return (null, $"{scope} hasn't taken {agent.Key} on.", null);
             }
 
@@ -216,13 +240,35 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
                 string over = cap == "agent"
                     ? $"{agent.Key} has started the {limits.MaxRunsPerAgentPerDay} runs it may start in a day."
                     : $"One sender from outside the team has started the {limits.MaxRunsPerSenderPerDay} runs a sender may start in a day.";
-                return (null, over, new AgentRunsCapped(agent.Id, agent.AccountId, agent.ResponsibleId, item.ScopeId, item.Kind, item.Id, cap, over));
+                return (null, over, new AgentRunsCapped(agent.Id, agent.AccountId, agent.ResponsibleId, scopeId, item?.Kind, item?.Id, cap, over));
+            }
+
+            // A chat's next run waits for its last to end, and starts marked as its earlier runs were: it gets what they said.
+            bool outside = false, wide = false;
+            if (chat is { Chat: { } talk, IsNew: var isNew })
+            {
+                if (isNew)
+                {
+                    db.AgentChats.Add(talk);
+                }
+                else
+                {
+                    if (await db.AgentRuns.AnyAsync(r => r.ChatId == talk.Id
+                        && (r.State == AgentRunStates.Queued || r.State == AgentRunStates.Running || r.State == AgentRunStates.Waiting), ct))
+                    {
+                        return (null, ChatGoing, null);
+                    }
+
+                    outside = await db.AgentRuns.AnyAsync(r => r.ChatId == talk.Id && r.Outside, ct);
+                    wide = await db.AgentRuns.AnyAsync(r => r.ChatId == talk.Id && r.Wide, ct);
+                    await db.AgentChats.Where(c => c.Id == talk.Id).ExecuteUpdateAsync(s => s.SetProperty(c => c.LastAt, DateTime.UtcNow), ct);
+                }
             }
 
             await ForgetTranscriptsAsync(db, TranscriptDays, ct);
-            AgentRun run = new(Guid.NewGuid(), agent.Id, item.ScopeId, item, trigger, startedBy, startedBy ?? actorId ?? agent.AccountId, prompt)
+            AgentRun run = new(Guid.NewGuid(), agent.Id, scopeId, item, trigger, startedBy, startedBy ?? actorId ?? agent.AccountId, prompt)
             {
-                Cause = cause, Exits = exits, Chain = chain, Sender = sender,
+                Cause = cause, Exits = exits, Chain = chain, Sender = sender, ChatId = chat?.Chat.Id, Outside = outside, Wide = wide,
             };
             db.AgentRuns.Add(run);
             await db.SaveChangesAsync(ct);
@@ -230,7 +276,7 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
         }, requiresNew: true, cancellationToken: ct); // committed before it's queued, even when the caller's change is still going (a workflow step's)
         if (run is not null)
         {
-            await line.QueueAsync(run, $"Agent run on {item.Key}", ct);
+            await line.QueueAsync(run, item is null ? "Agent run in a chat" : $"Agent run on {item.Key}", ct);
         }
         else if (capped is not null)
         {
@@ -266,8 +312,9 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             : null;
 
         // Its answer: a run that read beyond its scope keeps it for the transcript's readers; one that read outside
-        // content, whose answer was for the team only, for those who may read the item's internal notes too.
-        bool answer = transcript || (!run.Wide && (!run.Outside || seesSteps || access.ReadInternal));
+        // content, whose answer was for the team only, for those who may read the item's internal notes too. A chat's
+        // reply is its person's until they post it (ADR 0102).
+        bool answer = transcript || (run.ChatId is null && !run.Wide && (!run.Outside || seesSteps || access.ReadInternal));
         IReadOnlyDictionary<Guid, AgentPerson> people = await accounts.GetManyAsync(new[] { agent.AccountId, run.StartedBy, question?.AskedOf }.OfType<Guid>(), ct);
         return new AgentRunInfo(run.Id, agent.Id, agent.Key, people.GetValueOrDefault(agent.AccountId), run.ItemKind, item?.Key, run.Trigger,
             run.StartedBy is { } s ? people.GetValueOrDefault(s) : null, run.State, run.Outside, run.Wide, run.ChangeSetId, run.Turns, run.ToolCalls, run.Cost,
@@ -275,12 +322,15 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             answer && run.Answer is { } said ? AgentText.Clean(said) : null, run.Error, run.CreatedAt, run.StartedAt, run.EndedAt, transcript && !run.TranscriptGone,
             seesSteps
                 ? [.. steps.Select(x => new AgentRunStepInfo(x.Number, x.Kind, x.Name, x.Target, x.Outcome, transcript ? x.Input : null, transcript ? x.Output : null,
-                    x.StartedAt, x.EndedAt) { Allowed = x.Allowed })]
+                    x.StartedAt, x.EndedAt) { Allowed = x.Allowed, Writes = x.Writes })]
                 : [])
         {
             Question = question is null || !(seesSteps || question.AskedOf == actor.Id) ? null
                 : Info(question, run, agent, item?.Key, people, actor, transcript || question.AskedOf == actor.Id, steps.FirstOrDefault(s => s.Id == question.StepId)?.Output,
                     await MayAlwaysAsync(actor, question, run, agent, await OwnToolsAsync(ct), ct)),
+            Prompt = transcript ? run.Prompt : null,
+            ChatId = run.ChatId,
+            PostedAt = run.PostedAt,
         };
     }
 
@@ -423,7 +473,11 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
         AgentItemRef item = await items.FindAsync(key, ct) is { } found && (await items.AccessAsync(actor, found, ct)).Read
             ? found
             : throw new Volo.Abp.Domain.Entities.EntityNotFoundException($"There's no {items.Noun} {key}.");
+        // A chat's run shows on its item only once it changed something there (ADR 0102): its managers can stop or undo
+        // it, and see none of what was said.
         List<Guid> ids = await agentsDb.RunAsync(db => db.AgentRuns.AsNoTracking().Where(r => r.ItemId == item.Id && r.ItemKind == item.Kind)
+            .Where(r => r.ChatId == null || db.AgentRunSteps.Any(s => s.RunId == r.Id && s.Writes
+                && (s.Outcome == AgentStepOutcomes.Done || s.Outcome == AgentStepOutcomes.Unknown)))
             .OrderByDescending(r => r.CreatedAt).Take(20).Select(r => r.Id).ToListAsync(ct), cancellationToken: ct);
         List<AgentRunInfo> runs = [];
         foreach (Guid id in ids)

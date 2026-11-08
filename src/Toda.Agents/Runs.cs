@@ -66,6 +66,12 @@ public class AgentRun : Entity<Guid>
     /// </summary>
     public string? Chain { get; set; }
 
+    /// <summary>The chat it answers a message in (ADR 0102), when it does: its reply stays there until its person posts it.</summary>
+    public Guid? ChatId { get; set; }
+
+    /// <summary>When its person posted its reply on the chat's item (ADR 0102); a reply is posted once.</summary>
+    public DateTime? PostedAt { get; set; }
+
     /// <summary>The exits a workflow's step lets the agent choose from (<c>finish_step</c>); null when it chooses none.</summary>
     public List<string>? Exits { get; set; }
 
@@ -233,6 +239,63 @@ public static class AgentTriggers
 
     /// <summary>A workflow's step waits for the agent.</summary>
     public const string Workflow = "workflow";
+
+    /// <summary>A person's message in their chat with the agent (ADR 0102).</summary>
+    public const string Chat = "chat";
+}
+
+/// <summary>
+/// A person's chat with an agent (ADR 0102): their own, with one agent, in one scope, maybe about one item there. Each
+/// message they send is one run (<see cref="AgentTriggers.Chat"/>) that gets the chat so far; its reply stays in the chat
+/// until they post it on the item.
+/// </summary>
+public class AgentChat : Entity<Guid>
+{
+    /// <summary>How much of the first message a chat's title keeps.</summary>
+    public const int TitleLength = 80;
+
+    protected AgentChat()
+    {
+    }
+
+    public AgentChat(Guid id, Guid personId, Guid agentId, Guid scopeId, AgentItemRef? item, string firstMessage) : base(id)
+    {
+        PersonId = personId;
+        AgentId = agentId;
+        ScopeId = scopeId;
+        ItemKind = item?.Kind;
+        ItemId = item?.Id;
+        Title = TitleOf(firstMessage);
+        CreatedAt = LastAt = DateTime.UtcNow;
+    }
+
+    /// <summary>Whose chat it is: only they read it and write in it.</summary>
+    public Guid PersonId { get; private set; }
+
+    public Guid AgentId { get; private set; }
+
+    /// <summary>The scope it's in (a project): what the agent works in, and whose agents may chat there.</summary>
+    public Guid ScopeId { get; private set; }
+
+    /// <summary>The kind of the item it's about, if any.</summary>
+    public string? ItemKind { get; private set; }
+
+    /// <summary>The item it's about, if any: read afresh at each run.</summary>
+    public Guid? ItemId { get; private set; }
+
+    /// <summary>Its first message, on one line, cut to <see cref="TitleLength"/>.</summary>
+    public string Title { get; private set; } = "";
+
+    public DateTime CreatedAt { get; private set; }
+
+    /// <summary>When its person last wrote in it.</summary>
+    public DateTime LastAt { get; set; }
+
+    public static string TitleOf(string message)
+    {
+        string line = string.Join(' ', message.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return line.Length > TitleLength ? line[..(TitleLength - 1)].TrimEnd() + "…" : line;
+    }
 }
 
 /// <summary>
