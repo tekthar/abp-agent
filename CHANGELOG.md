@@ -8,6 +8,16 @@ All notable changes to Toda Agents are written here. The format follows
 
 ### Added
 
+- Limits: an agent's own run limits (`AgentRunLimits`: turns, tool calls, minutes, cost per run, the site's where null;
+  `AgentsOptions.MaxRunCost`), runs at once per agent and on the site (`MaxRunsAtOncePerAgent`, `MaxRunsAtOnce`: the
+  rest wait queued and start as others end), a person's runs not ended (`MaxWaitingPerPerson`), a tool call's timeout
+  (`ToolTimeout`) and a stop after failed calls in a row (`MaxToolFailuresInRow`); `AgentService.UsageAsync` and
+  `SpentThisMonthAsync`; `IAgentSite.WhyNotOnAsync`, defaulted, for a host that wants something before agents go on.
+- Memory: `AgentMemory` (`agents.agent_memories`, a new `IAgentsDbContext.AgentMemories`), the agent's own tools
+  `remember`, `recall` and `forget`, an item's newest memories given at a run's start, and `AgentMemoryService` for
+  admins (list, delete) and erasure. A memory reaches only runs whose person may read its item; a run that read beyond
+  its scope keeps none; one kept after outside content marks the run it reaches. The agent's `Memory` setting, on by
+  default; `IAgentItemKind.NeighboursAsync`, defaulted, lets recall look near an item's links.
 - Chats (ADR 0102): `AgentChat` (`agents.agent_chats`, a new `IAgentsDbContext.AgentChats`), `AgentChatService`
   (places, list, start, send, get, post, delete, and `ForgetAsync` for erasure), the trigger `AgentTriggers.Chat`, and
   `AgentRun.ChatId` and `PostedAt`. A chat's run gets the chat so far, starts marked as its earlier runs were, and keeps

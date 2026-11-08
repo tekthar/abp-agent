@@ -31,6 +31,7 @@ public sealed record AgentTurn(bool Over, int Turns);
 /// safe mode stop it.
 /// </summary>
 public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRunLine line, IAgentEvents events, IAgentModels models, IAgentTools tools, IAgentActingScope actingScope, IAgentSite site,
+    AgentMemoryService memories,
     IServiceProvider services, IOptions<AgentsOptions> options, ILogger<AgentRunner> logger) : ITransientDependency
 {
     private const int MaxOutput = 50_000;
@@ -57,12 +58,30 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             return new AgentTurn(true, run.Turns);
         }
 
+        // Its limits (ADR 0086 step 7): the agent's own, else the site's.
         AgentsOptions limits = options.Value;
-        if (run.Turns >= limits.MaxTurns || run.ToolCalls >= limits.MaxToolCalls
-            || run.StartedAt is { } started && await WorkedAsync(run.Id, started, cancellationToken) > limits.MaxTime)
+        int maxTurns = agent.MaxTurns ?? limits.MaxTurns;
+        int maxCalls = agent.MaxToolCalls ?? limits.MaxToolCalls;
+        TimeSpan maxTime = agent.MaxMinutes is { } minutes ? TimeSpan.FromMinutes(minutes) : limits.MaxTime;
+        decimal maxCost = agent.MaxRunCost ?? limits.MaxRunCost;
+        if (run.Turns >= maxTurns || run.ToolCalls >= maxCalls
+            || run.StartedAt is { } started && await WorkedAsync(run.Id, started, maxTime, cancellationToken) > maxTime)
         {
-            string why = $"The run reached its limits ({limits.MaxTurns} turns, {limits.MaxToolCalls} tool calls, {limits.MaxTime.TotalMinutes:0} minutes) before it finished.";
+            string why = $"The run reached its limits ({maxTurns} turns, {maxCalls} tool calls, {maxTime.TotalMinutes:0} minutes) before it finished.";
             await EndAsync(runId, AgentRunStates.Failed, why, null, cancellationToken);
+            return new AgentTurn(true, run.Turns);
+        }
+
+        if (maxCost > 0 && run.Cost >= maxCost)
+        {
+            await EndAsync(runId, AgentRunStates.Failed, $"The run reached the most it may cost ({maxCost:0.##}) before it finished.", null, cancellationToken);
+            return new AgentTurn(true, run.Turns);
+        }
+
+        if (limits.MaxToolFailuresInRow > 0 && await FailingAsync(run.Id, limits.MaxToolFailuresInRow, cancellationToken))
+        {
+            await EndAsync(runId, AgentRunStates.Failed,
+                $"Its last {limits.MaxToolFailuresInRow} tool calls failed, so it stopped rather than go on trying.", null, cancellationToken);
             return new AgentTurn(true, run.Turns);
         }
 
@@ -213,10 +232,10 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     /// How long the run has worked (ADR 0086 section 7): since it started, less the time its questions waited for an
     /// answer, so a question answered the next day doesn't use up the run's time.
     /// </summary>
-    private async Task<TimeSpan> WorkedAsync(Guid runId, DateTime started, CancellationToken ct)
+    private async Task<TimeSpan> WorkedAsync(Guid runId, DateTime started, TimeSpan max, CancellationToken ct)
     {
         TimeSpan since = DateTime.UtcNow - started;
-        if (since <= options.Value.MaxTime)
+        if (since <= max)
         {
             return since;
         }
@@ -225,6 +244,14 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             .Select(q => new { q.CreatedAt, q.AnsweredAt }).ToListAsync(ct), cancellationToken: ct);
         return since - TimeSpan.FromTicks(waits.Sum(w => (w.AnsweredAt!.Value - w.CreatedAt).Ticks));
     }
+
+    /// <summary>Whether its last <paramref name="count"/> tool calls all failed (ADR 0086 section 7): then it stops.</summary>
+    private Task<bool> FailingAsync(Guid runId, int count, CancellationToken ct) => agentsDb.RunAsync(async db =>
+    {
+        List<string> last = await db.AgentRunSteps.AsNoTracking().Where(s => s.RunId == runId && s.Kind == "tool")
+            .OrderByDescending(s => s.Number).Take(count).Select(s => s.Outcome).ToListAsync(ct);
+        return last.Count == count && last.All(o => o == AgentStepOutcomes.Failed);
+    }, cancellationToken: ct);
 
     /// <summary>Why the run can't go on now, if it can't: stopped, agents off, the agent paused, safe mode.</summary>
     private async Task<(string State, string Why)?> HeldAsync(AgentRun run, Agent agent, CancellationToken ct)
@@ -315,6 +342,16 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             text.Append("\n\n<").Append(kind.Noun).Append(" key=\"").Append(item.Key).Append("\">\n")
                 .Append(read ?? "(you can't read it)").Append("\n</").Append(kind.Noun).Append('>');
             await SetMarksAsync(run.Id, await BroughtAsync(run, item, [(item.Key, item.Kind)], ct), ct);
+
+            // What the agent learned about it before (ADR 0103): one kept after outside content marks the run.
+            if (agent.Memory && read is not null && await memories.AtStartAsync(run, agent, item, ct) is { Text: { } notes } given)
+            {
+                text.Append("\n\n").Append(notes);
+                if (given.Outside)
+                {
+                    await SetMarksAsync(run.Id, new AgentBrought(true, false), ct);
+                }
+            }
         }
 
         await agentsDb.RunAsync(async db =>
@@ -352,6 +389,11 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         // A tool the settings name is offered unless it's off; one they don't, unless it's offered only when named (ADR 0096).
         List<AgentTool> offered = [.. (await tools.ListAsync(new AgentToolsFor(agent.Id, run.ScopeId, run.StartedBy), ct))
             .Where(t => agent.Tools.TryGetValue(t.Name, out string? setting) ? setting != AgentToolSettings.Off : !t.OptIn)];
+        if (agent.Memory)
+        {
+            offered.AddRange(AgentMemoryService.Tools(ScopeItemNoun(run)));
+        }
+
         if (run.Exits is { Count: > 0 } exits)
         {
             offered.Add(new AgentTool(FinishStep, "Finish the step", $"Choose how the workflow's step ends: {string.Join(", ", exits)}. Call it once you know, then answer.",
@@ -408,6 +450,24 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
 
             await FinishStepAsync(step.Id, exit is null ? AgentStepOutcomes.Failed : AgentStepOutcomes.Done, said, ct);
             return new Call(said, exit is null);
+        }
+
+        // Its memory (ADR 0103): the package's own, about items its person may read.
+        if (tool is { Name: AgentMemoryService.Remember or AgentMemoryService.Recall or AgentMemoryService.Forget } && agent.Memory)
+        {
+            AgentMemoryService.Said said = tool.Name switch
+            {
+                AgentMemoryService.Remember => await memories.RememberAsync(run, agent, item, input, ct),
+                AgentMemoryService.Recall => await memories.RecallAsync(run, agent, item, input, ct),
+                _ => await memories.ForgetAsync(run, agent, input, ct),
+            };
+            if (said.Outside)
+            {
+                await SetMarksAsync(run.Id, new AgentBrought(true, false), ct);
+            }
+
+            await FinishStepAsync(step.Id, said.Error ? AgentStepOutcomes.Failed : AgentStepOutcomes.Done, said.Content, ct);
+            return new Call(said.Content, said.Error);
         }
 
         if (tool is null)
@@ -496,13 +556,20 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         string name = tool.Name;
         string content;
         bool error;
+        // A call that takes too long is given up (ADR 0086 section 7): the run hears so and may try another way.
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(options.Value.ToolTimeout);
         try
         {
             AgentActing acting = Acting(run, agent, reads);
             using (AgentActs.Begin(acting, actingScope))
             {
-                (content, error) = await tools.RunAsync(name, JsonSerializer.SerializeToElement(input), acting, ct);
+                (content, error) = await tools.RunAsync(name, JsonSerializer.SerializeToElement(input), acting, timeout.Token);
             }
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            (content, error) = ($"{name} took longer than {options.Value.ToolTimeout.TotalSeconds:0} seconds and was given up.", true);
         }
         catch (Exception ex) when (ex is Volo.Abp.IUserFriendlyException or Volo.Abp.Domain.Entities.EntityNotFoundException
             or Volo.Abp.Authorization.AbpAuthorizationException or Volo.Abp.IBusinessException)
@@ -763,6 +830,9 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
 
     private string ScopeNoun => options.Value.ScopeNoun;
 
+    /// <summary>What the run's items are called: its item's kind's noun, else "item".</summary>
+    private string ScopeItemNoun(AgentRun run) => run.ItemKind is { } k && Kind(k) is { } kind ? kind.Noun : "item";
+
     /// <summary>What the run does now: the run's rights, the agent's name, its change set.</summary>
     private static AgentActing Acting(AgentRun run, Agent agent, bool readOnly) =>
         new(run.Id, run.ChangeSetId, agent.AccountId, run.ActorId, readOnly) { Chain = run.Chain, AgentId = agent.Id, ScopeId = run.ScopeId, StartedBy = run.StartedBy };
@@ -773,7 +843,8 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         string name = agent.Names.GetValueOrDefault("en") ?? agent.Names.Values.FirstOrDefault() ?? agent.Key;
         string title = agent.Titles.GetValueOrDefault("en") ?? agent.Titles.Values.FirstOrDefault() ?? "";
         return $"You are {name}{(title.Length > 0 ? $", {title}," : "")} an agent working in {options.Value.ProductName} for the person who asked, with their rights and under your own name.\n\n"
-            + agent.Instructions + "\n\n" + (chat ? InAChat(noun) : WhereWorkGoes(noun)) + "\n\n" + DataNotInstructions(noun);
+            + agent.Instructions + "\n\n" + (chat ? InAChat(noun) : WhereWorkGoes(noun)) + "\n\n"
+            + (agent.Memory ? AgentMemoryService.InPersona(noun, true) + "\n\n" : "") + DataNotInstructions(noun);
     }
 
     /// <summary>

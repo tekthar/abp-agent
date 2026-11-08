@@ -55,6 +55,13 @@ Every agent's instructions also say where its work goes: in each place the reque
 description, a document, an item under this one), with its tools, then a short note of what it did; with no place named,
 its answer is the work, posted on the item.
 
+**Limits and memory.** Runs stop at their limits (the agent's own, else `AgentsOptions`), wait their turn past the
+runs-at-once caps, and a person has only so many runs going. Your `IAgentSite.WhyNotOnAsync` can refuse turning agents
+on until something is set up (Toda wants the site's monthly AI cost limit). Agents keep short memories about items:
+answer `IAgentItemKind.NeighboursAsync` with the items linked to one, as the actor reads, and `recall` looks near
+them too. Your host maps `agents.agent_memories` (`IAgentsDbContext.AgentMemories`); on erasing a person, call
+`AgentMemoryService.ForgetPersonAsync`.
+
 **Chats.** `AgentChatService` gives a person their own chats with an agent (ADR 0102): in a scope they may read, or
 about an item there. Each message is a run with the trigger `chat` and their rights, so every rule above holds; it gets
 the chat so far as the model's own turns (the newest 20 exchanges within 60,000 characters) and starts marked as the

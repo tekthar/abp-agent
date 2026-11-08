@@ -24,6 +24,7 @@ public interface IAgentsDbContext : IEfCoreDbContext
     DbSet<AgentQuestion> AgentQuestions { get; }
     DbSet<AgentPermission> AgentPermissions { get; }
     DbSet<AgentChat> AgentChats { get; }
+    DbSet<AgentMemory> AgentMemories { get; }
 }
 
 /// <summary>Runs the agents' work in a unit of work: the caller's when there is one, or a new one.</summary>
@@ -71,6 +72,7 @@ public static class AgentsModel
             b.Property(x => x.State).HasMaxLength(16).IsRequired();
             b.Property(x => x.TemplateKey).HasMaxLength(128);
             b.Property(x => x.TemplateVersion).HasMaxLength(64);
+            b.Property(x => x.MaxRunCost).HasPrecision(18, 6);
             b.HasIndex(x => x.Key).IsUnique();
             b.HasIndex(x => x.AccountId).IsUnique();
             b.HasIndex(x => x.ScopeId);
@@ -115,6 +117,18 @@ public static class AgentsModel
             b.HasIndex(x => new { x.AgentId, x.Cause });
             b.HasIndex(x => new { x.Sender, x.CreatedAt }); // a sender's runs in a day (ADR 0086 section 7)
             b.HasIndex(x => new { x.ChatId, x.CreatedAt }); // a chat's runs (ADR 0102)
+        });
+
+        // What agents learned about items (ADR 0103).
+        builder.Entity<AgentMemory>(b =>
+        {
+            b.ToTable("agent_memories", Schema);
+            b.Property(x => x.Id).ValueGeneratedNever();
+            b.Property(x => x.ItemKind).HasMaxLength(ItemKindLength).IsRequired();
+            b.Property(x => x.Text).HasMaxLength(AgentMemory.MaxText).IsRequired();
+            b.HasIndex(x => new { x.AgentId, x.ScopeId, x.LastUsedAt });
+            b.HasIndex(x => new { x.ItemKind, x.ItemId });
+            b.HasIndex(x => x.RememberedBy);
         });
 
         // People's chats with agents (ADR 0102): each message is a run in agent_runs with its ChatId.

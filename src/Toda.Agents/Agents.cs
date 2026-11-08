@@ -53,6 +53,21 @@ public class Agent : Entity<Guid>
     /// <summary>How many days its runs' transcripts are kept, over the site's setting; null for the site's.</summary>
     public int? TranscriptDays { get; set; }
 
+    /// <summary>Its runs' most turns, over the site's (ADR 0086 step 7); null for the site's.</summary>
+    public int? MaxTurns { get; set; }
+
+    /// <summary>Its runs' most tool calls, over the site's; null for the site's.</summary>
+    public int? MaxToolCalls { get; set; }
+
+    /// <summary>Its runs' most working minutes (waiting for an answer doesn't count), over the site's; null for the site's.</summary>
+    public int? MaxMinutes { get; set; }
+
+    /// <summary>The most one of its runs may cost, at the models' prices, over the site's; null for the site's.</summary>
+    public decimal? MaxRunCost { get; set; }
+
+    /// <summary>Whether it keeps and recalls memories about items (ADR 0103); off keeps what's there and stops both.</summary>
+    public bool Memory { get; set; } = true;
+
     /// <summary>Who answers for it: hears of its failures, answers its questions when no one else started a run, can pause it.</summary>
     public Guid ResponsibleId { get; set; }
 

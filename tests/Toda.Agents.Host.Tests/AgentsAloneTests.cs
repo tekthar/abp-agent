@@ -663,6 +663,125 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         Assert.True(stopped.GetProperty("canSend").GetBoolean());
     }
 
+    [Fact]
+    public async Task An_agents_own_limits_and_failures_in_a_row_end_its_runs_and_a_person_has_only_so_many_going()
+    {
+        // ADR 0086 step 7: the site lets two failures in a row, and one run going per person.
+        Limits(o => (o.MaxToolFailuresInRow, o.MaxWaitingPerPerson) = (2, 1));
+
+        // Its own limit of one turn: a two-call script stops after the first.
+        string brief = await SetUpAgentAsync("brief", """
+            demo: get_ticket {"key":"$ticket"}
+            demo: get_ticket {"key":"$ticket"}
+            demo-answer: Done.
+            """);
+        JsonElement limited = await SendAsync(HttpMethod.Put, $"/api/agents/{brief}", Admin, new { limits = new { maxTurns = 1 } });
+        Assert.Equal(1, limited.GetProperty("limits").GetProperty("maxTurns").GetInt32());
+        Assert.Equal(30, limited.GetProperty("siteLimits").GetProperty("maxTurns").GetInt32());
+        string ticket = await TicketAsync(Ben, "DESK", "Short");
+        JsonElement run = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = brief, prompt = "Go" }));
+        Assert.Equal("failed", run.GetProperty("state").GetString());
+        Assert.Contains("1 turns", run.GetProperty("error").GetString());
+        Assert.Equal(["get_ticket:done"], Tools(run));
+
+        // Two failed calls in a row stop the run before a third.
+        string clumsy = await SetUpAgentAsync("clumsy", """
+            demo: get_ticket {"key":"DESK-404"}
+            demo: get_ticket {"key":"DESK-405"}
+            demo: get_ticket {"key":"DESK-406"}
+            demo-answer: Done.
+            """);
+        JsonElement failing = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = clumsy, prompt = "Go" }));
+        Assert.Equal("failed", failing.GetProperty("state").GetString());
+        Assert.Contains("last 2 tool calls failed", failing.GetProperty("error").GetString());
+        Assert.Equal(["get_ticket:failed", "get_ticket:failed"], Tools(failing));
+
+        // A run of Ben's waits for his answer, so his next one isn't started.
+        string asker = await SetUpAgentAsync("asker", """
+            demo: set_priority {"key":"$ticket","priority":"high"}
+            demo-answer: Done.
+            """, new { add_note = "run" });
+        JsonElement waiting = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = asker, prompt = "Raise it" }));
+        Assert.Equal("waiting", waiting.GetProperty("state").GetString());
+        HttpResponseMessage refused = await RawAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = brief, prompt = "Again" });
+        Assert.False(refused.IsSuccessStatusCode);
+        Assert.Contains("runs that haven't ended", await refused.Content.ReadAsStringAsync());
+        // Cy's own allowance is untouched.
+        Assert.True((await RawAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Cy, new { agentId = brief, prompt = "Mine" })).IsSuccessStatusCode);
+    }
+
+    [Fact]
+    public async Task An_agent_remembers_about_a_ticket_is_given_it_next_time_recalls_it_and_keeps_none_after_reading_beyond_its_desk()
+    {
+        // ADR 0103: a memory about a ticket, kept in one run, given to the next run on it and found by recall.
+        string agent = await SetUpAgentAsync("noter", """
+            demo: remember {"text":"The printer jams when the tray is overfilled."}
+            demo-answer: Kept. Memories given: $memories.
+            """);
+        string ticket = await TicketAsync(Ben, "DESK", "Printer jams");
+        JsonElement first = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Note it" }));
+        Assert.Equal(["remember:done"], Tools(first));
+        Assert.Equal("Kept. Memories given: no.", first.GetProperty("answer").GetString());
+
+        await SendAsync(HttpMethod.Put, $"/api/agents/{agent}", Admin, new { instructions = """
+            demo: recall {"query":"printer tray"}
+            demo-answer: Recalled. Memories given: $memories.
+            """ });
+        JsonElement second = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Cy, new { agentId = agent, prompt = "Look" }));
+        Assert.Equal("Recalled. Memories given: yes.", second.GetProperty("answer").GetString());
+        // Cy started it, so Cy reads its steps.
+        JsonElement cys = await SendAsync(HttpMethod.Get, $"/api/agent-runs/{second.GetProperty("id").GetString()}", Cy);
+        string recalled = ToolSteps(cys)[0].GetProperty("output").GetString()!;
+        Assert.Contains("The printer jams when the tray is overfilled.", recalled);
+        Assert.Contains($"\"about\":\"{ticket}\"", recalled);
+        Assert.False(second.GetProperty("outside").GetBoolean());
+
+        // Off: the tools aren't offered, and nothing is given.
+        await SendAsync(HttpMethod.Put, $"/api/agents/{agent}", Admin, new { memory = false });
+        JsonElement off = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Look" }));
+        Assert.Equal(["recall:refused"], Tools(off));
+        Assert.Equal("Recalled. Memories given: no.", off.GetProperty("answer").GetString());
+        await SendAsync(HttpMethod.Put, $"/api/agents/{agent}", Admin, new { memory = true });
+
+        // A memory about another desk's ticket isn't kept; nor is any after a read beyond the desk.
+        string elsewhere = await TicketAsync(Ben, "OPS", "Elsewhere");
+        await SendAsync(HttpMethod.Put, $"/api/agents/{agent}", Admin, new { instructions = $$"""
+            demo: remember {"text":"Ops has a spare printer.","about":"{{elsewhere}}"}
+            demo: list_desks {}
+            demo: remember {"text":"Every desk has a printer."}
+            demo-answer: Done.
+            """ });
+        JsonElement wide = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Look around" }));
+        Assert.True(Tools(wide) is ["remember:failed", "list_desks:done", "remember:failed"], wide.ToString());
+        List<JsonElement> steps = ToolSteps(wide);
+        Assert.Contains("isn't one you may keep memories about here", steps[0].GetProperty("output").GetString());
+        Assert.Contains("read beyond its scope", steps[2].GetProperty("output").GetString());
+    }
+
+    [Fact]
+    public async Task A_memory_kept_after_outside_content_marks_the_run_it_reaches()
+    {
+        // Kept in a run on a customer's ticket, it's marked outside; a run on Ben's own ticket that recalls it is marked so
+        // too, and then its change asks, though its settings let it run.
+        string agent = await SetUpAgentAsync("careful-noter", """
+            demo: remember {"text":"The customer wants a call back."}
+            demo-answer: Kept.
+            """);
+        string customers = await TicketAsync(Ben, "DESK", "Please call", fromCustomer: true);
+        JsonElement kept = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{customers}/agent-runs", Ben, new { agentId = agent, prompt = "Note it" }));
+        Assert.Equal(["remember:done"], Tools(kept));
+
+        string own = await TicketAsync(Ben, "DESK", "Ours");
+        await SendAsync(HttpMethod.Put, $"/api/agents/{agent}", Admin, new { instructions = """
+            demo: recall {"query":"customer call"}
+            demo: set_priority {"key":"$ticket","priority":"high"}
+            demo-answer: Done.
+            """ });
+        JsonElement asked = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{own}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
+        Assert.True(asked.GetProperty("outside").GetBoolean());
+        Assert.True(Tools(asked) is ["recall:done", "set_priority:asked"], asked.ToString());
+    }
+
     private static List<JsonElement> ToolSteps(JsonElement run) =>
         [.. run.GetProperty("steps").EnumerateArray().Where(s => s.GetProperty("kind").GetString() == "tool")];
 

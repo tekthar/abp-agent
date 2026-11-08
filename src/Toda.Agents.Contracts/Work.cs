@@ -75,6 +75,13 @@ public interface IAgentItemKind
 
     /// <summary>The run's answer on the item, by the person who started it, run by the agent; for the team only when <paramref name="internalOnly"/>.</summary>
     Task AnswerAsync(AgentActing acting, AgentItemRef item, string text, bool internalOnly, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The items linked to one within <paramref name="depth"/> steps, as the actor reads (ADR 0103: memories near an item),
+    /// leaving the item out. The default knows none.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> NeighboursAsync(AgentActor actor, AgentItemRef item, int depth, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<Guid>>([]);
 }
 
 /// <summary>

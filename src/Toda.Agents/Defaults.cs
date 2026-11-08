@@ -222,6 +222,8 @@ public sealed class AgentQuestionExpiry(IServiceScopeFactory scopes, ILogger<Age
                 {
                     await using AsyncServiceScope scope = scopes.CreateAsyncScope();
                     await scope.ServiceProvider.GetRequiredService<AgentRunService>().ExpireQuestionsAsync(stoppingToken);
+                    // Runs waiting for room (ADR 0086 section 7), in case a server stopped before it queued them.
+                    await scope.ServiceProvider.GetRequiredService<AgentRunLine>().QueueWaitingAsync(stoppingToken);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

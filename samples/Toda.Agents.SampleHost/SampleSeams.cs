@@ -323,8 +323,11 @@ public sealed partial class ScriptedModel : IAgentModels, ITransientDependency
         }
         else
         {
+            // $memories: whether the run was given memories at its start (ADR 0103).
+            string given = messages.Any(m => m?["content"] is JsonValue v && v.TryGetValue(out string? text) && text.Contains("<memories about=", StringComparison.Ordinal))
+                ? "yes" : "no";
             string answer = (Answer().Match(request.System) is { Success: true } a ? a.Groups["text"].Value.Trim() : "Done.")
-                .Replace("$turn", turn, StringComparison.Ordinal);
+                .Replace("$turn", turn, StringComparison.Ordinal).Replace("$memories", given, StringComparison.Ordinal);
             message = new JsonObject
             {
                 ["role"] = "assistant", ["stop_reason"] = "end_turn", ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = answer }),

@@ -245,6 +245,60 @@ public static class AgentTriggers
 }
 
 /// <summary>
+/// What an agent learned about an item (ADR 0103): a short note it keeps for its next runs, in one scope, about one item
+/// there. It keeps which run made it, whose run that was, and whether that run had read outside content; it's shown only
+/// to runs whose person may read its item, and one marked outside marks the run it reaches.
+/// </summary>
+public class AgentMemory : Entity<Guid>
+{
+    /// <summary>How long a memory may be.</summary>
+    public const int MaxText = 1000;
+
+    protected AgentMemory()
+    {
+    }
+
+    public AgentMemory(Guid id, Guid agentId, Guid scopeId, AgentItemRef item, string text, Guid runId, Guid? rememberedBy, bool outside) : base(id)
+    {
+        AgentId = agentId;
+        ScopeId = scopeId;
+        ItemKind = item.Kind;
+        ItemId = item.Id;
+        Text = text;
+        RunId = runId;
+        RememberedBy = rememberedBy;
+        Outside = outside;
+        CreatedAt = LastUsedAt = DateTime.UtcNow;
+    }
+
+    public Guid AgentId { get; private set; }
+
+    public Guid ScopeId { get; private set; }
+
+    public string ItemKind { get; private set; } = "";
+
+    public Guid ItemId { get; private set; }
+
+    public string Text { get; private set; } = "";
+
+    /// <summary>The run that kept it.</summary>
+    public Guid RunId { get; private set; }
+
+    /// <summary>Whose run kept it: the person who started it, null when the system did.</summary>
+    public Guid? RememberedBy { get; set; }
+
+    /// <summary>Whether the run that kept it had read outside content: a run it reaches is marked so too.</summary>
+    public bool Outside { get; private set; }
+
+    public DateTime CreatedAt { get; private set; }
+
+    /// <summary>When a run was last given it: the least recently used go first past the cap.</summary>
+    public DateTime LastUsedAt { get; set; }
+
+    public int Uses { get; set; }
+}
+
+/// <summary>
 /// A person's chat with an agent (ADR 0102): their own, with one agent, in one scope, maybe about one item there. Each
 /// message they send is one run (<see cref="AgentTriggers.Chat"/>) that gets the chat so far; its reply stays in the chat
 /// until they post it on the item.

@@ -114,4 +114,10 @@ public interface IAgentAudit
 public interface IAgentSite
 {
     bool SafeMode { get; }
+
+    /// <summary>
+    /// Why agents can't be turned on now, in words for the admin (ADR 0086 section 7: Toda wants the site's monthly AI
+    /// ceiling first); null when they can. The default lets them.
+    /// </summary>
+    Task<string?> WhyNotOnAsync(CancellationToken cancellationToken) => Task.FromResult<string?>(null);
 }

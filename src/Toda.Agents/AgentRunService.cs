@@ -235,6 +235,14 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
             string? cap = await db.AgentRuns.CountAsync(r => r.AgentId == agent.Id && r.CreatedAt > day, ct) >= limits.MaxRunsPerAgentPerDay ? "agent"
                 : sender is { } who && await db.AgentRuns.CountAsync(r => r.Sender == who && r.CreatedAt > day, ct) >= limits.MaxRunsPerSenderPerDay ? "sender"
                 : null;
+            // A person's runs that haven't ended (ADR 0086 section 7): past the cap, they wait for some to end first.
+            if (cap is null && startedBy is { } person && limits.MaxWaitingPerPerson > 0
+                && await db.AgentRuns.CountAsync(r => r.StartedBy == person
+                    && (r.State == AgentRunStates.Queued || r.State == AgentRunStates.Running || r.State == AgentRunStates.Waiting), ct) >= limits.MaxWaitingPerPerson)
+            {
+                return (null, $"You have {limits.MaxWaitingPerPerson} agents' runs that haven't ended: wait for some to end, or stop them.", null);
+            }
+
             if (cap is not null)
             {
                 string over = cap == "agent"

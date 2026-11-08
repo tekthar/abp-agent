@@ -16,7 +16,26 @@ public sealed record AgentScopeInfo(string ScopeKey, string RoleKey, DateTime Ta
 public sealed record AgentInfo(
     Guid Id, string Key, AgentPerson Account, string? ScopeKey, Dictionary<string, string> Names, Dictionary<string, string> Titles, string Instructions,
     string ModelAlias, AgentPerson? Responsible, string State, DateTime? PausedAt, bool OfferAll, List<string> OfferedTo, List<AgentScopeInfo> Scopes,
-    string? TemplateKey, string? TemplateVersion, DateTime CreatedAt, DateTime UpdatedAt, Dictionary<string, string> Tools, int? TranscriptDays);
+    string? TemplateKey, string? TemplateVersion, DateTime CreatedAt, DateTime UpdatedAt, Dictionary<string, string> Tools, int? TranscriptDays)
+{
+    /// <summary>Its runs' own limits (ADR 0086 step 7); a null is the site's.</summary>
+    public AgentRunLimits Limits { get; init; } = AgentRunLimits.None;
+
+    /// <summary>The site's limits for runs, which a null in <see cref="Limits"/> falls back to.</summary>
+    public AgentRunLimits SiteLimits { get; init; } = AgentRunLimits.None;
+
+    /// <summary>Whether it keeps and recalls memories about items (ADR 0103).</summary>
+    public bool Memory { get; init; } = true;
+}
+
+/// <summary>
+/// A run's limits (ADR 0086 step 7): turns, tool calls, working minutes, and what it may cost at the models' prices. An
+/// agent's null is the site's; given in a change, all four replace the agent's, and a null or 0 goes back to the site's.
+/// </summary>
+public sealed record AgentRunLimits(int? MaxTurns, int? MaxToolCalls, int? MaxMinutes, decimal? MaxRunCost)
+{
+    public static readonly AgentRunLimits None = new(null, null, null, null);
+}
 
 /// <summary>
 /// What an agent is made or changed with. On a change, what's left out stays as it is; the key can't change.
@@ -26,13 +45,26 @@ public sealed record AgentInfo(
 public sealed record AgentChange(
     string? Key = null, Dictionary<string, string>? Names = null, Dictionary<string, string>? Titles = null, string? Instructions = null,
     string? ModelAlias = null, Guid? ResponsibleId = null, bool? OfferAll = null, List<string>? OfferedTo = null, string? RoleKey = null,
-    Dictionary<string, string>? Tools = null, int? TranscriptDays = null);
+    Dictionary<string, string>? Tools = null, int? TranscriptDays = null)
+{
+    /// <summary>Its runs' limits (ADR 0086 step 7), replacing the agent's four when given.</summary>
+    public AgentRunLimits? Limits { get; init; }
+
+    /// <summary>Whether it keeps and recalls memories about items (ADR 0103).</summary>
+    public bool? Memory { get; init; }
+}
 
 /// <summary>An agent a scope may use: offered to it or its own (<c>Own</c>), and whether it took it on, with which role.</summary>
 public sealed record ScopeAgentInfo(AgentInfo Agent, bool Own, string? RoleKey);
 
 /// <summary>The site's switch: on, whether the operator allows it, and whether safe mode holds every agent.</summary>
 public sealed record AgentSwitch(bool Enabled, bool AdminsMayEnable, bool SafeMode);
+
+/// <summary>An agent's runs in a period (ADR 0086 step 7): how many started, failed and were stopped, their tokens and cost.</summary>
+public sealed record AgentUsagePeriod(int Runs, int Failed, int Stopped, long Tokens, decimal Cost);
+
+/// <summary>What an agent's runs spent today and this month (UTC).</summary>
+public sealed record AgentUsage(AgentUsagePeriod Today, AgentUsagePeriod Month);
 
 /// <summary>
 /// Agents (ADR 0086 step 1, ADR 0091): made by site admins (site agents, offered to every scope or to named ones) and by
@@ -75,6 +107,12 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
             throw new UserFriendlyException(OperatorOff);
         }
 
+        // The host's word before agents go on (ADR 0086 section 7): Toda's wants the site's monthly AI ceiling first.
+        if (enabled && await site.WhyNotOnAsync(ct) is { } why)
+        {
+            throw new UserFriendlyException(why);
+        }
+
         await agentsDb.RunAsync(async db =>
         {
             AgentSettings settings = await db.AgentSettings.FirstOrDefaultAsync(s => s.Id == AgentSettings.SingletonId, ct)
@@ -86,6 +124,39 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
         }, cancellationToken: ct);
         await audit.WriteAsync(AgentAuditTypes.Switched, "AgentSettings", null, "agents", new { enabled }, ct);
         return await SettingsAsync(ct);
+    }
+
+    /// <summary>The site's limits for runs (ADR 0086 step 7), which agents' own fall back to.</summary>
+    public AgentRunLimits SiteLimits => new(options.Value.MaxTurns, options.Value.MaxToolCalls, (int)options.Value.MaxTime.TotalMinutes,
+        options.Value.MaxRunCost > 0 ? options.Value.MaxRunCost : null);
+
+    /// <summary>
+    /// What an agent's runs spent and did (ADR 0086 step 7), for whoever administers it: today and this month (UTC), runs
+    /// started, failed and stopped, tokens and cost at the models' prices.
+    /// </summary>
+    public async Task<AgentUsage> UsageAsync(AgentActor actor, Guid id, CancellationToken ct)
+    {
+        await agentsDb.RunAsync(db => AdministeredAsync(db, actor, id, ct), cancellationToken: ct);
+        DateTime now = DateTime.UtcNow;
+        DateTime month = new(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var rows = await agentsDb.RunAsync(db => db.AgentRuns.AsNoTracking().Where(r => r.AgentId == id && r.CreatedAt >= month)
+            .Select(r => new { r.CreatedAt, r.State, r.Cost, Tokens = r.InputTokens + r.OutputTokens }).ToListAsync(ct), cancellationToken: ct);
+        AgentUsagePeriod Sum(DateTime since)
+        {
+            var these = rows.Where(r => r.CreatedAt >= since).ToList();
+            return new AgentUsagePeriod(these.Count, these.Count(r => r.State == AgentRunStates.Failed), these.Count(r => r.State == AgentRunStates.Stopped),
+                these.Sum(r => (long)r.Tokens), these.Sum(r => r.Cost));
+        }
+
+        return new AgentUsage(Sum(now.Date), Sum(month));
+    }
+
+    /// <summary>What every agent's runs cost this month (UTC), at the models' prices.</summary>
+    public Task<decimal> SpentThisMonthAsync(CancellationToken ct)
+    {
+        DateTime now = DateTime.UtcNow;
+        DateTime month = new(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        return agentsDb.RunAsync(db => db.AgentRuns.AsNoTracking().Where(r => r.CreatedAt >= month).SumAsync(r => r.Cost, ct), cancellationToken: ct);
     }
 
     /// <summary>Every agent on the site, site agents first, for site admins (the host checks).</summary>
@@ -238,6 +309,19 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
                 agent.TranscriptDays = days == 0 ? null : days;
             }
 
+            if (input.Memory is { } memory)
+            {
+                agent.Memory = memory;
+            }
+
+            if (input.Limits is { } limits)
+            {
+                agent.MaxTurns = limits.MaxTurns is > 0 ? limits.MaxTurns : null;
+                agent.MaxToolCalls = limits.MaxToolCalls is > 0 ? limits.MaxToolCalls : null;
+                agent.MaxMinutes = limits.MaxMinutes is > 0 ? limits.MaxMinutes : null;
+                agent.MaxRunCost = limits.MaxRunCost is > 0 ? limits.MaxRunCost : null;
+            }
+
             if (agent.ScopeId is null)
             {
                 agent.OfferAll = input.OfferAll ?? agent.OfferAll;
@@ -374,7 +458,12 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
             people.GetValueOrDefault(a.ResponsibleId),
             a.State, a.PausedAt, a.OfferAll, [.. a.OfferedTo.Select(o => keys.GetValueOrDefault(o)?.Key).OfType<string>()],
             [.. taken.Where(t => t.AgentId == a.Id).Select(t => new AgentScopeInfo(keys.GetValueOrDefault(t.ScopeId)?.Key ?? "?", t.RoleKey, t.TakenAt))],
-            a.TemplateKey, a.TemplateVersion, a.CreatedAt, a.UpdatedAt, a.Tools, a.TranscriptDays)).ToList();
+            a.TemplateKey, a.TemplateVersion, a.CreatedAt, a.UpdatedAt, a.Tools, a.TranscriptDays)
+        {
+            Limits = new AgentRunLimits(a.MaxTurns, a.MaxToolCalls, a.MaxMinutes, a.MaxRunCost),
+            SiteLimits = SiteLimits,
+            Memory = a.Memory,
+        }).ToList();
     }
 
     private static async Task<Agent> FindAsync(IAgentsDbContext db, Guid id, CancellationToken ct, bool tracked = false) =>
@@ -474,6 +563,11 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
         {
             throw new UserFriendlyException("An agent keeps its transcripts from 1 to 365 days, or 0 for the site's period.");
         }
+
+        if (input.Limits is { } l && (l.MaxTurns is < 0 or > 200 || l.MaxToolCalls is < 0 or > 500 || l.MaxMinutes is < 0 or > 240 || l.MaxRunCost is < 0 or > 10_000))
+        {
+            throw new UserFriendlyException("A run's limits are at most 200 turns, 500 tool calls, 240 minutes and a cost of 10,000; 0 or nothing is the site's.");
+        }
     }
 
     private static Dictionary<string, string> Clean(Dictionary<string, string>? texts) =>
@@ -487,6 +581,7 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
             ("names", input.Names is not null), ("titles", input.Titles is not null), ("instructions", input.Instructions is not null),
             ("modelAlias", input.ModelAlias is not null), ("responsible", input.ResponsibleId is not null), ("offerAll", input.OfferAll is not null),
             ("offeredTo", input.OfferedTo is not null), ("tools", input.Tools is not null), ("transcriptDays", input.TranscriptDays is not null),
+            ("limits", input.Limits is not null), ("memory", input.Memory is not null),
         }.Where(c => c.Given).Select(c => c.Name),
     ];
 

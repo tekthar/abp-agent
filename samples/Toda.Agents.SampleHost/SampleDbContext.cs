@@ -172,6 +172,7 @@ public class SampleDbContext(DbContextOptions<SampleDbContext> options) : AbpDbC
     public DbSet<AgentQuestion> AgentQuestions => Set<AgentQuestion>();
     public DbSet<AgentPermission> AgentPermissions => Set<AgentPermission>();
     public DbSet<AgentChat> AgentChats => Set<AgentChat>();
+    public DbSet<AgentMemory> AgentMemories => Set<AgentMemory>();
 
     public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {

@@ -4,13 +4,15 @@ using Volo.Abp.DependencyInjection;
 namespace Toda.Agents;
 
 /// <summary>
-/// One run per agent per item at a time (ADR 0086 section 2): a run is queued in the host's queue only when the agent
-/// has no other run going on its item; the others wait in order, and the next is queued when one ends. Ending also tells
-/// the host (<see cref="IAgentEvents"/>).
+/// One run per agent per item at a time (ADR 0086 section 2), and only so many at once (section 7): a run is queued in
+/// the host's queue only when the agent has no other run going on its item, has fewer than its share working, and the
+/// site has room; the others wait, queued, in order, and the next is queued when one ends (and every few minutes, in
+/// case a server stopped). Ending also tells the host (<see cref="IAgentEvents"/>).
 /// </summary>
-public sealed class AgentRunLine(AgentsDb agentsDb, IAgentRunQueue queue, IAgentEvents events) : ITransientDependency
+public sealed class AgentRunLine(AgentsDb agentsDb, IAgentRunQueue queue, IAgentEvents events, Microsoft.Extensions.Options.IOptions<AgentsOptions> options)
+    : ITransientDependency
 {
-    /// <summary>Queues the run unless an earlier one of the same agent on the same item is still going; then it waits its turn.</summary>
+    /// <summary>Queues the run unless an earlier one of the same agent on the same item is still going, or there's no room; then it waits its turn.</summary>
     public async Task QueueAsync(AgentRun run, string title, CancellationToken ct)
     {
         if (run.ItemId is { } item && await agentsDb.RunAsync(db => Ahead(db, run.Id, run.AgentId, item, run.CreatedAt).AnyAsync(ct), cancellationToken: ct))
@@ -18,10 +20,49 @@ public sealed class AgentRunLine(AgentsDb agentsDb, IAgentRunQueue queue, IAgent
             return;
         }
 
+        if (queue is not AgentRunWorkerQueue && await FullAsync(run, ct))
+        {
+            return; // queued, with no job yet: it starts as a run ends (QueueWaitingAsync)
+        }
+
         Guid? job = await queue.EnqueueAsync(new AgentRunWork(run.Id, title, run.StartedBy, run.ScopeId), ct);
         if (job is not null)
         {
             await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == run.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.JobId, job), ct), cancellationToken: ct);
+        }
+    }
+
+    /// <summary>
+    /// Whether the run must wait for room (ADR 0086 section 7): its agent has its share working, or the site has as many as
+    /// it allows. Working is running, or queued in the host's queue; waiting for an answer isn't.
+    /// </summary>
+    private Task<bool> FullAsync(AgentRun run, CancellationToken ct) => agentsDb.RunAsync(async db =>
+    {
+        AgentsOptions limits = options.Value;
+        IQueryable<AgentRun> working = db.AgentRuns.Where(r => r.Id != run.Id
+            && (r.State == AgentRunStates.Running || (r.State == AgentRunStates.Queued && r.JobId != null)));
+        return limits.MaxRunsAtOncePerAgent > 0 && await working.CountAsync(r => r.AgentId == run.AgentId, ct) >= limits.MaxRunsAtOncePerAgent
+            || limits.MaxRunsAtOnce > 0 && await working.CountAsync(ct) >= limits.MaxRunsAtOnce;
+    }, cancellationToken: ct);
+
+    /// <summary>
+    /// Runs waiting for room (queued, with no job), oldest first, are queued while there's room: after a run ends, and every
+    /// few minutes. The package's own queue takes queued runs itself, with the same limits.
+    /// </summary>
+    public async Task QueueWaitingAsync(CancellationToken ct)
+    {
+        if (queue is AgentRunWorkerQueue)
+        {
+            return;
+        }
+
+        DateTime settled = DateTime.UtcNow.AddSeconds(-2); // one just made is being queued by whoever made it
+        List<AgentRun> waiting = await agentsDb.RunAsync(db => db.AgentRuns.AsNoTracking()
+            .Where(r => r.State == AgentRunStates.Queued && r.JobId == null && r.CreatedAt < settled).OrderBy(r => r.CreatedAt).Take(20).ToListAsync(ct),
+            cancellationToken: ct);
+        foreach (AgentRun run in waiting)
+        {
+            await QueueAsync(run, "Agent run", ct);
         }
     }
 
@@ -44,6 +85,9 @@ public sealed class AgentRunLine(AgentsDb agentsDb, IAgentRunQueue queue, IAgent
         {
             await QueueAsync(next, "Agent run", ct);
         }
+
+        // A run ended, so there's room: runs waiting for it go now.
+        await QueueWaitingAsync(ct);
     }
 
     /// <summary>The agent's runs on the item that came before this one and haven't ended.</summary>

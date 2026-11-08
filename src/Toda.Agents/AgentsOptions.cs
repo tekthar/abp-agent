@@ -36,6 +36,27 @@ public class AgentsOptions
     /// <summary>The runs one sender from outside the team (a customer) may start in a day (ADR 0086 section 7).</summary>
     public int MaxRunsPerSenderPerDay { get; set; } = 20;
 
+    /// <summary>The most one run may cost, at the models' prices (an agent may say less or more); 0 for no cap.</summary>
+    public decimal MaxRunCost { get; set; } = 2m;
+
+    /// <summary>
+    /// How many of one agent's runs work at once (ADR 0086 section 7); the rest wait their turn, queued, and start as
+    /// others end. Waiting for an answer doesn't count.
+    /// </summary>
+    public int MaxRunsAtOncePerAgent { get; set; } = 3;
+
+    /// <summary>How many agents' runs work at once on the whole site, so a schedule firing many agents doesn't overrun it.</summary>
+    public int MaxRunsAtOnce { get; set; } = 10;
+
+    /// <summary>How many runs one person may have started that haven't ended, so a flood of asks isn't unbounded work.</summary>
+    public int MaxWaitingPerPerson { get; set; } = 20;
+
+    /// <summary>How long one tool call may take before it's given up.</summary>
+    public TimeSpan ToolTimeout { get; set; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>How many tool calls in a row may fail before the run stops as failed, rather than add to the load.</summary>
+    public int MaxToolFailuresInRow { get; set; } = 5;
+
     /// <summary>What the agent's persona says it works in.</summary>
     public string ProductName { get; set; } = "Toda";
 
