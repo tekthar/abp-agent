@@ -3,13 +3,20 @@
 ## Tools
 
 Your `IAgentTools` lists the tools there are and runs one. An agent is offered every tool its settings don't turn
-off.
+off, and a tool that's off until turned on (`OptIn`) only once its settings name it.
+
+`ListAsync(AgentToolsFor run, ct)` lists the tools for one run: its agent, its scope, and the person who started it
+(null when the system did). By default it's `ListAsync(ct)`, the same for every run. Give it when some tools are only
+some agents' or a scope's, or use the run's person's own sign-in somewhere else (leave those out when nobody started
+the run).
 
 ```csharp
 public sealed record AgentTool(string Name, string Title, string Description, JsonElement InputSchema, bool ReadsOnly, bool FromPlugin,
     AgentToolReach Reach = AgentToolReach.Items)
 {
     public string? ItemKind { get; init; }
+    public bool AlwaysAsks { get; init; }
+    public bool OptIn { get; init; }
 }
 ```
 
@@ -24,7 +31,13 @@ public sealed record AgentTool(string Name, string Title, string Description, Js
   looked at. `Inside`: it reads only what's inside the team and the scope (who's who, docs), so it marks nothing, unless
   its input names another scope. `Named`: it reads the scope its input names (a project's shape or saved searches), so
   it marks the run as beyond when that isn't the run's scope or it names none. `Across`: it reads across scopes (a list
-  of every project), so it marks the run as beyond.
+  of every project), so it marks the run as beyond. `Outside`: it reads outside your system as the run's own person may
+  (with their own sign-in to another system, or a skill), so its answer marks the run as having read outside content,
+  and nothing beyond its scope.
+- **`AlwaysAsks`:** its effect is one your undo can't take back (a change in another system). It asks every time,
+  whatever the agent's settings, and is never allowed for the run or always.
+- **`OptIn`:** it's off until the agent's settings name it (`ask` or `run`): a skill, or a change elsewhere, an agent
+  shouldn't have by default.
 - **A change's landing:** before a change runs, where it lands is looked up: the item it names, else the scope your item
   kinds read in its input (`ScopeNamedAsync`). Beyond the run's scope, or a change of your own tools that names nowhere
   that can be told, it asks first, whatever the agent's settings or a standing permission say.
@@ -36,7 +49,9 @@ public sealed record AgentTool(string Name, string Title, string Description, Js
 
 - with the run's rights: `acting.ActorId` is whose rights;
 - under the agent's name: `acting.AgentAccountId`, in the change set `acting.ChangeSetId`;
-- read-only when `acting.ReadOnly`.
+- read-only when `acting.ReadOnly`;
+- for the run `acting.RunId` of `acting.AgentId` in `acting.ScopeId`, started by `acting.StartedBy` (null when the system
+  started it): a tool that uses a person's own sign-in uses theirs, and refuses when there's none.
 
 Return `new AgentToolResult(content, error: true)` for a refusal or bad input: the model reads it and can try
 otherwise. An exception that isn't one of ABP's friendly ones (`UserFriendlyException`, `EntityNotFoundException`,

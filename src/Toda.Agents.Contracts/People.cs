@@ -11,6 +11,9 @@ public sealed record AgentPerson(Guid Id, string Username, string DisplayName, b
 {
     /// <summary><see cref="AgentPersonKinds"/>: what the account is, so pickers and history can tell an agent from a colleague.</summary>
     public string Kind { get; init; } = AgentPersonKinds.Person;
+
+    /// <summary>The account's picture (ADR 0096): a path on the host's site it serves, or null for its initials.</summary>
+    public string? Picture { get; init; }
 }
 
 public static class AgentPersonKinds
@@ -54,6 +57,13 @@ public interface IAgentAccounts
     /// </summary>
     Task RenameAsync(Guid accountId, string displayName, IReadOnlyDictionary<string, string> displayNames, CancellationToken cancellationToken) =>
         Task.CompletedTask;
+
+    /// <summary>
+    /// Sets or clears (null) an agent's account's picture (ADR 0096): a path on the host's site that the host serves and
+    /// checks. The default refuses, for a host whose accounts have no pictures.
+    /// </summary>
+    Task SetPictureAsync(Guid accountId, string? picture, CancellationToken cancellationToken) =>
+        Task.FromException(new NotSupportedException("This host's accounts have no pictures."));
 }
 
 /// <summary>Who may administer what (ADR 0091). The default: nobody but those the host calls site admins, and no scopes.</summary>

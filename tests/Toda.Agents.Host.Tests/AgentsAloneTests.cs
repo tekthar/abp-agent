@@ -372,6 +372,44 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task An_outside_read_with_the_persons_own_account_runs_and_an_outside_change_asks_every_time_and_starts_off()
+    {
+        // Off until it's turned on (OptIn): offered to the model only once the settings name it (ADR 0096).
+        string off = await SetUpAgentAsync("poster", """
+            demo: post_design {"key":"$ticket"}
+            demo-answer: Posted.
+            """);
+        string ticket = await TicketAsync(Ben, "DESK", "Design it");
+        JsonElement run = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = off, prompt = "Go" }));
+        Assert.Equal("refused", ToolSteps(run)[0].GetProperty("outcome").GetString());
+
+        // A read elsewhere with Ben's own account runs, and marks the run outside but not beyond its desk; then the change asks,
+        // though its setting says run, never offers "Always", and a second call asks again.
+        string agent = await SetUpAgentAsync("designer", """
+            demo: design_notes {}
+            demo: post_design {"key":"$ticket"}
+            demo: post_design {"key":"$ticket"}
+            demo-answer: Posted twice.
+            """, tools: new { post_design = "run" });
+        run = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
+        Assert.Equal(("design_notes", "done"), (ToolSteps(run)[0].GetProperty("name").GetString(), ToolSteps(run)[0].GetProperty("outcome").GetString()));
+        Assert.Contains(Ben, ToolSteps(run)[0].GetProperty("output").GetString());
+        Assert.True(run.GetProperty("outside").GetBoolean());
+        Assert.False(run.GetProperty("wide").GetBoolean());
+        JsonElement question = run.GetProperty("question");
+        Assert.Equal("post_design", question.GetProperty("tool").GetString());
+        Assert.Contains("asks every time", question.GetProperty("why").GetString());
+        Assert.False(question.GetProperty("canAlways").GetBoolean());
+        await SendAsync(HttpMethod.Post, $"/api/agent-questions/{question.GetProperty("id").GetString()}/answer", Ben, new { answer = "allow-run" });
+        run = await WaitingAsync(run);
+        Assert.Equal("post_design", run.GetProperty("question").GetProperty("tool").GetString());
+        await SendAsync(HttpMethod.Post, $"/api/agent-questions/{run.GetProperty("question").GetProperty("id").GetString()}/answer", Ben, new { answer = "allow" });
+        run = await FinishedAsync(run);
+        Assert.Equal(["design_notes", "post_design", "post_design"], ToolSteps(run).Select(s => s.GetProperty("name").GetString()));
+        Assert.All(ToolSteps(run), s => Assert.Equal("done", s.GetProperty("outcome").GetString()));
+    }
+
+    [Fact]
     public async Task Always_allow_is_only_for_the_hosts_own_tools_and_a_standing_permission_is_listed_used_and_taken_back()
     {
         string agent = await SetUpAgentAsync("mailer", """

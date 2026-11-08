@@ -273,7 +273,9 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     /// <summary>The host's tools the agent may use (not off in its settings), and finish_step when the run was given exits.</summary>
     private async Task<List<AgentTool>> OfferedAsync(AgentRun run, Agent agent, CancellationToken ct)
     {
-        List<AgentTool> offered = [.. (await tools.ListAsync(ct)).Where(t => agent.Tools.GetValueOrDefault(t.Name) != AgentToolSettings.Off)];
+        // A tool the settings name is offered unless it's off; one they don't, unless it's offered only when named (ADR 0096).
+        List<AgentTool> offered = [.. (await tools.ListAsync(new AgentToolsFor(agent.Id, run.ScopeId, run.StartedBy), ct))
+            .Where(t => agent.Tools.TryGetValue(t.Name, out string? setting) ? setting != AgentToolSettings.Off : !t.OptIn)];
         if (run.Exits is { Count: > 0 } exits)
         {
             offered.Add(new AgentTool(FinishStep, "Finish the step", $"Choose how the workflow's step ends: {string.Join(", ", exits)}. Call it once you know, then answer.",
@@ -346,10 +348,11 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             }
 
             var marks = await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == run.Id).Select(r => new { r.Outside, r.Wide }).FirstAsync(ct), cancellationToken: ct);
-            allowed = marks.Outside || marks.Wide ? null
+            allowed = marks.Outside || marks.Wide || tool.AlwaysAsks ? null
                 : agent.Tools.GetValueOrDefault(tool.Name) == AgentToolSettings.Run ? AgentAllowances.Settings
                 : await AllowedAsync(run, agent, tool.Name, step.Target, ct);
-            string? why = marks.Outside ? "This run has read outside content (a customer's words or mail), so its changes ask a person first."
+            string? why = tool.AlwaysAsks ? $"{name} changes another system, which undo can't take back, so it asks every time."
+                : marks.Outside ? "This run has read outside content (a customer's words or mail), so its changes ask a person first."
                 : marks.Wide ? $"This run has read beyond its {ScopeNoun}, so its changes ask a person first."
                 : allowed is not null ? null
                 : $"{name} changes things, and this agent's settings say it asks first.";
@@ -457,6 +460,13 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
                 await SetMarksAsync(run.Id, new AgentBrought(false, true), ct);
             }
 
+            return;
+        }
+
+        if (tool.Reach == AgentToolReach.Outside)
+        {
+            // Outside, as the run's own person may (their own sign-in, or a skill): outside content, within the scope.
+            await SetMarksAsync(run.Id, new AgentBrought(true, false), ct);
             return;
         }
 
@@ -672,7 +682,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
 
     /// <summary>What the run does now: the run's rights, the agent's name, its change set.</summary>
     private static AgentActing Acting(AgentRun run, Agent agent, bool readOnly) =>
-        new(run.Id, run.ChangeSetId, agent.AccountId, run.ActorId, readOnly) { Chain = run.Chain };
+        new(run.Id, run.ChangeSetId, agent.AccountId, run.ActorId, readOnly) { Chain = run.Chain, AgentId = agent.Id, ScopeId = run.ScopeId, StartedBy = run.StartedBy };
 
     /// <summary>Who the agent is, its instructions, and that what it reads is data.</summary>
     private string Persona(Agent agent, string noun)

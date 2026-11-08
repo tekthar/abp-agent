@@ -85,6 +85,15 @@ public sealed record AgentActing(Guid RunId, Guid ChangeSetId, Guid AgentAccount
 {
     /// <summary>The chain of automation the run is part of, as the host gave it when the run started; null when it gave none.</summary>
     public string? Chain { get; init; }
+
+    /// <summary>The run's agent (ADR 0096), for tools that are only some agents'.</summary>
+    public Guid? AgentId { get; init; }
+
+    /// <summary>The run's scope (ADR 0096), for tools that are a scope's.</summary>
+    public Guid? ScopeId { get; init; }
+
+    /// <summary>The person who started the run, or null when the system did (ADR 0096): a tool that uses a person's own sign-in uses theirs.</summary>
+    public Guid? StartedBy { get; init; }
 }
 
 /// <summary>
@@ -113,6 +122,12 @@ public enum AgentToolReach
     /// as having read beyond its scope when that isn't the run's, or when it names none and so reads every scope's.
     /// </summary>
     Named,
+
+    /// <summary>
+    /// Outside the host, as the run's own person may (ADR 0096): an outside server with the sign-in of the person who
+    /// started the run, or a skill. Its answer marks the run as having read outside content, and nothing beyond its scope.
+    /// </summary>
+    Outside,
 }
 
 /// <summary>A tool an agent may be offered: the model sees its name, description and input schema.</summary>
@@ -124,7 +139,22 @@ public sealed record AgentTool(string Name, string Title, string Description, Js
     /// keys in its answer no kind claims. Null: any kind whose key shape fits.
     /// </summary>
     public string? ItemKind { get; init; }
+
+    /// <summary>
+    /// Its effect is one undo can't take back (a change in another system, ADR 0096): it asks every time, whatever the
+    /// agent's settings, and is never allowed for a run or always.
+    /// </summary>
+    public bool AlwaysAsks { get; init; }
+
+    /// <summary>Offered only when the agent's settings name it (ask or run): off until its manager turns it on (ADR 0096).</summary>
+    public bool OptIn { get; init; }
 }
+
+/// <summary>
+/// Which run a list of tools is for (ADR 0096): its agent, its scope, and the person who started it (none when the system
+/// did), as some tools are only the agent's or the scope's, or use that person's own sign-in.
+/// </summary>
+public sealed record AgentToolsFor(Guid AgentId, Guid ScopeId, Guid? StartedBy);
 
 /// <summary>A tool's answer: its content for the model, and whether it failed (a refusal, a bad input).</summary>
 public sealed record AgentToolResult(string Content, bool Error);
@@ -136,6 +166,9 @@ public sealed record AgentToolResult(string Content, bool Error);
 public interface IAgentTools
 {
     Task<IReadOnlyList<AgentTool>> ListAsync(CancellationToken cancellationToken);
+
+    /// <summary>The tools for one run (ADR 0096); the default, the same for every run.</summary>
+    Task<IReadOnlyList<AgentTool>> ListAsync(AgentToolsFor run, CancellationToken cancellationToken) => ListAsync(cancellationToken);
 
     /// <summary>Runs the tool. A refusal or bad input comes back as an error result; anything else that throws is the tool failing.</summary>
     Task<AgentToolResult> RunAsync(string name, JsonElement input, AgentActing acting, CancellationToken cancellationToken);

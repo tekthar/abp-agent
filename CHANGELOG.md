@@ -8,6 +8,14 @@ All notable changes to Toda Agents are written here. The format follows
 
 ### Added
 
+- Tools that reach outside (ADR 0096): `AgentToolReach.Outside` marks the run as having read outside content and nothing
+  beyond its scope; `AgentTool.AlwaysAsks` makes a change undo can't take back ask every time, never allowed for the run
+  or always; `AgentTool.OptIn` offers a tool only once the agent's settings name it.
+- `IAgentTools.ListAsync(AgentToolsFor, ct)`, defaulted, lists the tools for one run (its agent, scope and the person
+  who started it), and `AgentActing` carries `AgentId`, `ScopeId` and `StartedBy`.
+- An agent's picture: `AgentPerson.Picture`, `IAgentAccounts.SetPictureAsync` (the default refuses) and
+  `AgentService.SetPictureAsync`, for whoever administers the agent.
+- The sample host has an outside read and an outside change, with a host test.
 - `IAgentAccounts.CreateAsync` with the account's name in other languages, and `IAgentAccounts.RenameAsync`, both with
   defaults (the account is made with one name and kept as made), so a host that implements neither keeps working. An
   agent's account is made with the agent's names, the name as written being its English one (else its first), and is

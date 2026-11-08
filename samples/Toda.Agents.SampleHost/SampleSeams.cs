@@ -192,10 +192,28 @@ public sealed class SampleTools(SampleDb sampleDb, SampleDirectory directory, Ti
             ReadsOnly: true, FromPlugin: false, Reach: AgentToolReach.Inside),
         // A plugin's tool that would send a mail: what it does can't be taken back, so it's never always allowed.
         new("email_customer", "Mail the customer", "Mails a ticket's customer (the sample only says it did).", KeyInput, ReadsOnly: false, FromPlugin: true),
+        // An outside system read with the run's own person's account (ADR 0096): it runs, and what it brings is outside content.
+        new("design_notes", "Read my design notes", "The notes of whoever started the run, in a design tool elsewhere.", JsonDocument.Parse("""{"type":"object"}""").RootElement,
+            ReadsOnly: true, FromPlugin: false, Reach: AgentToolReach.Outside),
+        // A change in that other system: undo can't take it back, so it asks every time, and it's off until turned on.
+        new("post_design", "Post to the design tool", "Posts a frame in the design tool elsewhere.", KeyInput, ReadsOnly: false, FromPlugin: true, Reach: AgentToolReach.Outside)
+        {
+            AlwaysAsks = true, OptIn = true,
+        },
     ]);
 
     public async Task<AgentToolResult> RunAsync(string name, JsonElement input, AgentActing acting, CancellationToken cancellationToken)
     {
+        if (name == "design_notes")
+        {
+            return new AgentToolResult(acting.StartedBy is { } person ? $"Notes of {person}: ship the onboarding first." : "Nobody started this run.", acting.StartedBy is null);
+        }
+
+        if (name == "post_design")
+        {
+            return new AgentToolResult($"Posted as {acting.StartedBy}.", false);
+        }
+
         if (name == "email_customer")
         {
             return new AgentToolResult(acting.ReadOnly ? "email_customer sends, and this act may only read." : "Mailed the customer.", acting.ReadOnly);

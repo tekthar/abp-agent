@@ -264,6 +264,17 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
     }
 
     /// <summary>
+    /// Sets or clears (null) the agent's picture (ADR 0096), for whoever administers it: its account's, so it shows
+    /// wherever the agent does. The host makes the path (an upload it keeps, or one of its own pictures) and checks it.
+    /// </summary>
+    public async Task<AgentInfo> SetPictureAsync(AgentActor actor, Guid id, string? picture, CancellationToken ct)
+    {
+        Agent agent = await agentsDb.RunAsync(db => AdministeredAsync(db, actor, id, ct), cancellationToken: ct);
+        await accounts.SetPictureAsync(agent.AccountId, picture, ct);
+        return await GetAsync(agent.Id, ct);
+    }
+
+    /// <summary>
     /// The names its account takes from an agent's: the name as written (English, else its first) and the name in each
     /// other language.
     /// </summary>
