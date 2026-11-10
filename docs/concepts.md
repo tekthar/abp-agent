@@ -17,7 +17,7 @@ holds no tokens. An agent has:
 
 ## Scopes
 
-A scope is where agents work: Toda's projects, the sample's desks, a marketplace. Your `IAgentScopes` says which there
+A scope is where agents work: a work tracker's projects, the sample's desks, a marketplace. Your `IAgentScopes` says which there
 are, by id and key.
 
 - **A site agent** (no scope) is offered to every scope (`OfferAll`) or to named ones (`OfferedTo`).
@@ -65,7 +65,7 @@ which tool it was and to check before doing it again. The package never repeats 
 
 ## Actors and acting
 
-`AgentActor(Id, Principal)` is who calls a service: the account, and your own principal for it (Toda passes its Casl
+`AgentActor(Id, Principal)` is who calls a service: the account, and your own principal for it (a host may pass its Casl
 ability). The package never reads the principal; it hands it back to your seams.
 
 `AgentActing` is what a run is doing now: the run, its change set, the agent's account, whose rights it uses, whether

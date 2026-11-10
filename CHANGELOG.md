@@ -1,12 +1,28 @@
 # Changelog
 
-All notable changes to Toda Agents are written here. The format follows
+All notable changes to AbpAgent are written here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the packages follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html): before 1.0, a minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- **Renamed to AbpAgent**, so the package names no product it came from (docs/adr/0001-independent-of-any-host.md).
+  What a host changes:
+  - packages: `Toda.Agents.Contracts` is now `AbpAgent.Contracts`, `Toda.Agents` is now `AbpAgent`;
+  - namespaces follow (`using AbpAgent;`, `using AbpAgent.Contracts;`), and `TodaAgentsModule` is now
+    `AbpAgentModule`;
+  - error codes: `Toda.Agents:Forbidden` is now `AbpAgent:Forbidden`, `Toda.Agents:Conflict` is now
+    `AbpAgent:Conflict`. Clients that match on the code need the new one;
+  - `AgentsOptions.ProductName` defaults to "this system" instead of the old product's name: set your own;
+  - the host tests' server is named by `ABPAGENT_TEST_POSTGRES` (was `TODA_AGENTS_TEST_POSTGRES`).
+  Nothing in the database changes: the tables stay in the `agents` schema, so a migration added after the rename is
+  empty. Comments no longer cite design records the repository doesn't ship; `docs/adr/0001` is the one it does.
+
 ### Added
+
+- A name check in CI (`scripts/check-names.sh`): a former host's name in the sources, docs or packages fails the build.
 
 - Limits: an agent's own run limits (`AgentRunLimits`: turns, tool calls, minutes, cost per run, the site's where null;
   `AgentsOptions.MaxRunCost`), runs at once per agent and on the site (`MaxRunsAtOncePerAgent`, `MaxRunsAtOnce`: the
@@ -18,19 +34,19 @@ All notable changes to Toda Agents are written here. The format follows
   admins (list, delete) and erasure. A memory reaches only runs whose person may read its item; a run that read beyond
   its scope keeps none; one kept after outside content marks the run it reaches. The agent's `Memory` setting, on by
   default; `IAgentItemKind.NeighboursAsync`, defaulted, lets recall look near an item's links.
-- Chats (ADR 0102): `AgentChat` (`agents.agent_chats`, a new `IAgentsDbContext.AgentChats`), `AgentChatService`
+- Chats: `AgentChat` (`agents.agent_chats`, a new `IAgentsDbContext.AgentChats`), `AgentChatService`
   (places, list, start, send, get, post, delete, and `ForgetAsync` for erasure), the trigger `AgentTriggers.Chat`, and
   `AgentRun.ChatId` and `PostedAt`. A chat's run gets the chat so far, starts marked as its earlier runs were, and keeps
   its reply in the chat until the person posts it. `AgentRunInfo` now carries `Prompt` (for transcript readers),
   `ChatId` and `PostedAt`; `AgentRunStepInfo.Writes` says whether a step could change things. The sample host has the
   routes and two host tests.
-- What a step needs before it ends (ADR 0099): `IAgentExitChecks` and `AgentExitCheck`. A run with a cause asks the host
+- What a step needs before it ends: `IAgentExitChecks` and `AgentExitCheck`. A run with a cause asks the host
   before it ends by an exit; `finish_step` is refused with what's missing, and a final answer is answered with it, at
   most `AgentRunner.MaxReminders` times. With no host check registered nothing changes. The sample host has one, with a
   host test.
 - Every agent's instructions say where its work goes: each place the request names, with its tools, then a short note;
   with none named, the answer is the work.
-- Tools that reach outside (ADR 0096): `AgentToolReach.Outside` marks the run as having read outside content and nothing
+- Tools that reach outside: `AgentToolReach.Outside` marks the run as having read outside content and nothing
   beyond its scope; `AgentTool.AlwaysAsks` makes a change undo can't take back ask every time, never allowed for the run
   or always; `AgentTool.OptIn` offers a tool only once the agent's settings name it.
 - `IAgentTools.ListAsync(AgentToolsFor, ct)`, defaulted, lists the tools for one run (its agent, scope and the person

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>AbpAgent: AI agents as teammates for ABP hosts. Agents, their runs and the loop, the cleaner for what they write, and transcripts let go.</Description>
+  </PropertyGroup>
+
+  <!-- Nothing of any host's: a host gives items, tools, a model and rights through the seams. An architecture test holds this. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\AbpAgent.Contracts\AbpAgent.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Volo.Abp.EntityFrameworkCore.PostgreSql" Version="$(AbpVersion)" />
+    <!-- EF Core as the design-time tools build against (10.0.12), as the design-time tools pin it. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
+    <PackageReference Include="Markdig" Version="1.4.0" />
+  </ItemGroup>
+
+</Project>

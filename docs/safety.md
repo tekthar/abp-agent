@@ -31,7 +31,7 @@ A write that may not run without a person makes the run ask, and wait (`waiting`
   customer is never asked about the run their words started.
 - **What they see:** the tool, the item, why it asks, and what the tool would be given. A run's `Question` shows it to
   whoever is asked and whoever may read the run's steps; `AgentRunService.QuestionsAsync` lists a person's open ones;
-  `IAgentEvents.QuestionAskedAsync` lets your host tell them (Toda sends a notice).
+  `IAgentEvents.QuestionAskedAsync` lets your host tell them (a notice, say).
 - **The answers** (`AgentRunService.AnswerAsync`): `allow` (this call), `allow-run` (this tool on this item for the
   rest of the run), `always` (the person's own runs of this agent with this tool in this scope, kept as an
   `AgentPermission`), or `refuse` (the agent is told not to try another way). Only whoever it asks answers.
@@ -65,7 +65,7 @@ that from going round:
   or that the agent's account started, starts nothing.
 - **One run per cause:** an event that comes twice (`Cause`) starts one run.
 - **The host's chain:** a run keeps the chain of automation you gave it (`Chain`) and hands it back on every act, so
-  your own loop rules see agents' writes as part of the chain. Toda stops a chain 10 deep, or when an agent worked the
+  your own loop rules see agents' writes as part of the chain. A host might stop a chain 10 deep, or when an agent worked the
   item already in it, or three agents deep.
 - **A day's caps:** past `MaxRunsPerAgentPerDay` for the agent, or `MaxRunsPerSenderPerDay` for a sender from outside
   the team, no run starts and the item waits for people; `IAgentEvents.RunsCappedAsync` tells you.
@@ -74,7 +74,7 @@ that from going round:
 
 - **Check rights in every tool and store,** with `acting.ActorId`, as you would for the person. The package doesn't
   know your rules.
-- **Refuse writes when `acting.ReadOnly`.** Toda's stores refuse a save while an act may only read; that's what makes
+- **Refuse writes when `acting.ReadOnly`.** Your stores should refuse a save while an act may only read; that's what makes
   rule 2 hold even when a tool is marked wrongly.
 - **Answer `BroughtAsync` honestly, and fail closed.** If a tool returns content the package can't see into, give it
   `Reach = Across`, or mark it as a plugin's.

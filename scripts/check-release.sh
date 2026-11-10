@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Checks that the version is ready to release: CHANGELOG.md has a "## [<version>]" entry; given --tag v<version>, that
-# the tag names the version in Directory.Build.props; given --unpublished, that nuget.org doesn't have Toda.Agents at
+# the tag names the version in Directory.Build.props; given --unpublished, that nuget.org doesn't have AbpAgent at
 # that version yet (nuget.org refuses a duplicate push, but only after the other packages went). Exits 1 with the reason
 # otherwise.
 set -euo pipefail
@@ -31,20 +31,20 @@ fi
 
 if [[ $check_registry == 1 ]]; then
   versions=$(mktemp)
-  status=$(curl -s -o "$versions" -w '%{http_code}' "https://api.nuget.org/v3-flatcontainer/toda.agents/index.json" || true)
+  status=$(curl -s -o "$versions" -w '%{http_code}' "https://api.nuget.org/v3-flatcontainer/abpagent/index.json" || true)
   lower=$(printf '%s' "$version" | tr '[:upper:]' '[:lower:]')
   if [[ "$status" == "200" ]]; then
     if grep -qF "\"$lower\"" "$versions"; then
-      problems+=("Toda.Agents $version is already on nuget.org: bump the version")
+      problems+=("AbpAgent $version is already on nuget.org: bump the version")
     fi
   elif [[ "$status" != "404" ]]; then
-    problems+=("can't ask nuget.org for Toda.Agents's versions (HTTP $status)")
+    problems+=("can't ask nuget.org for AbpAgent's versions (HTTP $status)")
   fi
   rm -f "$versions"
 fi
 
 if [[ ${#problems[@]} -gt 0 ]]; then
-  for p in "${problems[@]}"; do echo "Toda.Agents $version: $p" >&2; done
+  for p in "${problems[@]}"; do echo "AbpAgent $version: $p" >&2; done
   exit 1
 fi
-echo "Toda.Agents $version: ready to release"
+echo "AbpAgent $version: ready to release"

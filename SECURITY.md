@@ -8,4 +8,4 @@ acts with more than its rights, writes after reading outside content, or carries
 how to reproduce it, and the version. We will answer within a week, agree on a fix and a date to publish it, and credit
 you unless you'd rather not be named.
 
-Supported versions: the latest release only, while Toda Agents is in preview (0.x).
+Supported versions: the latest release only, while AbpAgent is in preview (0.x).

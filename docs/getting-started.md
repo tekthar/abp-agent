@@ -1,15 +1,15 @@
 # Getting started
 
-This walks through `samples/Toda.Agents.SampleHost`: a help desk whose tickets live in its own table, and an agent
+This walks through `samples/AbpAgent.SampleHost`: a help desk whose tickets live in its own table, and an agent
 that triages them. Everything here is in the sample; read its files beside this page.
 
 ## 1. The module and your context
 
-Depend on `TodaAgentsModule`, and let your EF Core context stand in for the package's, so its tables are yours: your
+Depend on `AbpAgentModule`, and let your EF Core context stand in for the package's, so its tables are yours: your
 migrations make them, and your queries can join them.
 
 ```csharp
-[DependsOn(typeof(AbpAutofacModule), typeof(AbpAspNetCoreMvcModule), typeof(TodaAgentsModule))]
+[DependsOn(typeof(AbpAutofacModule), typeof(AbpAspNetCoreMvcModule), typeof(AbpAgentModule))]
 public class SampleHostModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
@@ -123,10 +123,10 @@ reads the ticket, sees that a run happened but not its steps.
 
 ## 7. Prove it
 
-`tests/Toda.Agents.Host.Tests` drives the sample through its API on a database of its own. Run them:
+`tests/AbpAgent.Host.Tests` drives the sample through its API on a database of its own. Run them:
 
 ```bash
-dotnet test tests/Toda.Agents.Host.Tests
+dotnet test tests/AbpAgent.Host.Tests
 ```
 
 Then read [safety](safety.md) before you give an agent tools that write.

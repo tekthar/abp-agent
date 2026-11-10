@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Public contracts of AbpAgent: what a host gives agents to work with (items, tools, a model, rights, accounts).</Description>
+  </PropertyGroup>
+
+  <!-- Nothing of any host's, ABP's or EF Core's: plain .NET. An architecture test holds this. -->
+
+</Project>

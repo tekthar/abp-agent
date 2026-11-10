@@ -1,5 +1,6 @@
-# Pushes to main and pull requests run the checks: build, the unit tests, the integration tests against PostgreSQL
-# through the sample host, and pack. A v<version> tag runs them, then pushes the packages to nuget.org through
+# Pushes to main and pull requests run the checks: no former host's name (scripts/check-names.sh), build, the unit
+# tests, the integration tests against PostgreSQL through the sample host, and pack, with the names checked inside the
+# packages too. A v<version> tag runs them, then pushes the packages to nuget.org through
 # Trusted Publishing (a one-hour key nuget.org gives this workflow, no stored secret) and makes a GitHub release
 # (see README.md, "Releasing"). Each action is pinned by commit SHA, its version in a comment; Dependabot keeps them
 # current (.github/dependabot.yml).
@@ -35,16 +36,18 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      TODA_AGENTS_TEST_POSTGRES: "Host=localhost;Port=5432;Username=postgres;Password=postgres"
+      ABPAGENT_TEST_POSTGRES: "Host=localhost;Port=5432;Username=postgres;Password=postgres"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
       - run: bash scripts/check-release.sh
-      - run: dotnet build Toda.Agents.slnx -c Release
-      - run: dotnet test Toda.Agents.slnx -c Release --no-build
-      - run: dotnet pack Toda.Agents.slnx -c Release --no-build -o artifacts
+      - run: bash scripts/check-names.sh
+      - run: dotnet build AbpAgent.slnx -c Release
+      - run: dotnet test AbpAgent.slnx -c Release --no-build
+      - run: dotnet pack AbpAgent.slnx -c Release --no-build -o artifacts
+      - run: bash scripts/check-names.sh --packages artifacts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: packages

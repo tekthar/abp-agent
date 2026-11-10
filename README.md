@@ -1,10 +1,10 @@
-# Toda Agents
+# AbpAgent
 
 AI agents as teammates, for ABP applications on .NET 10 and PostgreSQL. An agent has an account of its own and works in
 runs: someone asks it to do something with an item (a ticket, a record, a listing), and it reads, uses your tools with
 that person's rights, and answers, under its own name. Every change it makes is in one change set you can undo, and
-every step it takes is written down. Toda Agents is the agents of Toda, an open-source work management platform,
-packaged so any product can give its people agents that work on its own things.
+every step it takes is written down. AbpAgent is independent of any one product: a host gives accounts, rights, scopes, items, tools
+and a model through the seams, so any product can give its people agents that work on its own things.
 
 > **Preview.** 0.x versions may change their API in any minor version (SemVer). Pin an exact version.
 
@@ -40,21 +40,21 @@ The package keeps seven tables in the `agents` schema of your database, mapped i
 
 ## Packages
 
-On [nuget.org](https://www.nuget.org/packages?q=Toda.Agents):
+On [nuget.org](https://www.nuget.org/packages?q=AbpAgent):
 
 | Package | What it holds |
 |---|---|
-| `Toda.Agents.Contracts` | The contracts a host implements: accounts, rights, scopes, item kinds (`IAgentItemKind`), tools (`IAgentTools`), the model (`IAgentModels`), acting, the run queue, the audit. Nothing but .NET. |
-| `Toda.Agents` | The ABP module: agents and runs, the runner, the cleaner, transcripts, the run queue, and the EF Core model you map. |
+| `AbpAgent.Contracts` | The contracts a host implements: accounts, rights, scopes, item kinds (`IAgentItemKind`), tools (`IAgentTools`), the model (`IAgentModels`), acting, the run queue, the audit. Nothing but .NET. |
+| `AbpAgent` | The ABP module: agents and runs, the runner, the cleaner, transcripts, the run queue, and the EF Core model you map. |
 
 ## Use it in a host
 
-`samples/Toda.Agents.SampleHost` is a complete host: a help desk's tickets in their own table, worked on by agents with
+`samples/AbpAgent.SampleHost` is a complete host: a help desk's tickets in their own table, worked on by agents with
 a scripted model. [Getting started](docs/getting-started.md) walks through it. In short:
 
 ```csharp
 // 1. Depend on the module.
-[DependsOn(typeof(TodaAgentsModule), typeof(AbpAspNetCoreMvcModule))]
+[DependsOn(typeof(AbpAgentModule), typeof(AbpAspNetCoreMvcModule))]
 public class MyModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
@@ -98,25 +98,25 @@ AgentRunInfo run = await runs.AskAsync(new AgentActor(me), "ticket", "DESK-12", 
   HTTP, the run queue and several servers.
 - [Troubleshooting](docs/troubleshooting.md): the messages you may meet, and what to do.
 
-Comments in the code cite design records by number, such as "ADR 0086". These are Toda's architecture decision
-records. `docs/adr/0091-agents-as-a-package.md` is the one that made agents a package.
+Design records are in `docs/adr`: [0001](docs/adr/0001-independent-of-any-host.md) is why the package stands alone and
+how that's kept.
 
 ## Build and test
 
 You need the .NET 10 SDK. The host tests also need PostgreSQL: `localhost:5432` with user and password `postgres` (the
-official image's defaults), or the server `TODA_AGENTS_TEST_POSTGRES` names.
+official image's defaults), or the server `ABPAGENT_TEST_POSTGRES` names.
 
 ```bash
 docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:17
-dotnet build Toda.Agents.slnx -c Release
-dotnet test Toda.Agents.slnx -c Release
-dotnet pack Toda.Agents.slnx -c Release -o artifacts
+dotnet build AbpAgent.slnx -c Release
+dotnet test AbpAgent.slnx -c Release
+dotnet pack AbpAgent.slnx -c Release -o artifacts
 ```
 
 To try the sample, run it and call its API with an `X-Account` header (the sample has no sign-in):
 
 ```bash
-dotnet run --project samples/Toda.Agents.SampleHost --urls http://localhost:5320
+dotnet run --project samples/AbpAgent.SampleHost --urls http://localhost:5320
 ```
 
 ## Releasing

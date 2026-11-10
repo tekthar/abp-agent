@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/AbpAgent.SampleHost/AbpAgent.SampleHost.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/AbpAgent.Contracts/AbpAgent.Contracts.csproj" />
+    <Project Path="src/AbpAgent/AbpAgent.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AbpAgent.Tests/AbpAgent.Tests.csproj" />
+    <Project Path="tests/AbpAgent.Host.Tests/AbpAgent.Host.Tests.csproj" />
+  </Folder>
+</Solution>

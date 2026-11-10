@@ -1,9 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <PropertyGroup>
-    <Description>Public contracts of toda-agents: what a host gives agents to work with (items, tools, a model, rights, accounts).</Description>
-  </PropertyGroup>
-
-  <!-- Nothing of Toda's, ABP's or EF Core's: agents become a package (ADR 0091). An architecture test holds this. -->
-
-</Project>

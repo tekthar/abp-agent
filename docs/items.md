@@ -13,7 +13,7 @@ host has plugins, by `{plugin}:{key}`.
 | `Kind` | the kind's name, as runs store it in `ItemKind` |
 | `Noun` | what the request calls the item: the tag around it in the run's first message (`<ticket key="DESK-1">`) and in the agent's persona |
 | `IsKey(key)` | whether a text has the shape of one of your keys. The runner collects the `key` and `recordKey` values in a tool's input and answer that any kind says are keys, and asks each kind what its own bring in: see [two kinds whose keys look alike](#two-kinds-whose-keys-look-alike) |
-| `Claims(item)` | whether an object in a tool's answer is one of your items by its shape (Toda's records have their project, its assets their schema). Optional: false by default |
+| `Claims(item)` | whether an object in a tool's answer is one of your items by its shape (a tracker's records have their project, its assets their schema). Optional: false by default |
 | `FindAsync(key)` | the item by key, in any scope, or null. Asking an agent finds the item this way |
 | `ScopeNamedAsync(input)` | the scope a tool call's input names, or makes something in, in your words (a desk, a project, the type of item it makes), when it names no item by key. Optional: null by default, so a change of your own tools that names no item asks first |
 | `GetAsync(id)` | the item by id, or null. Keep finding items that were deleted, so their runs can still be read |
@@ -30,7 +30,7 @@ named, and the run's own item when the run starts. Answer for the keys that are 
 - **Outside:** content that came from outside the team: a customer's request, a mail, a comment by someone who doesn't
   work in the item's scope, an anonymous visitor's, something an import brought from another system. Once a run has
   read it, its writes ask a person first, and its answer is for the team only.
-- **Beyond:** an item in another scope, or one the run's item doesn't name (in Toda, a record's run reads an asset as
+- **Beyond:** an item in another scope, or one the run's item doesn't name (say, a record's run reads an asset as
   beyond unless the record names it; an asset's run, an asset in another schema). Once a run has read beyond, its
   writes ask, and its answer stays in the run, for the person who started it, so what it read with their reach can't
   land where others with less would read it.
@@ -42,7 +42,7 @@ A kind that runs don't work on can still answer this: one whose items no one may
 
 ## Two kinds whose keys look alike
 
-With one kind, or kinds whose keys never look alike, skip this. In Toda, a project and an asset schema may share a key,
+With one kind, or kinds whose keys never look alike, skip this. Say a project and an asset schema may share a key,
 so `IT-5` is a record and an asset. Were every key given to every kind, a run on the record would read the asset of
 the same key as beyond its scope, and keep its answer. So a key goes to the kind it is:
 

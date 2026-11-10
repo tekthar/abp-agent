@@ -2,7 +2,7 @@
 
 ## The seams
 
-Each seam is an interface in `Toda.Agents.Contracts`. Register yours in your module with
+Each seam is an interface in `AbpAgent.Contracts`. Register yours in your module with
 `context.Services.Replace(ServiceDescriptor.Transient<ISeam, Yours>())`; the package's module adds its defaults first.
 
 | Seam | What it answers | Default |
@@ -38,7 +38,7 @@ show. Beside the agent, the item, the trigger, the prompt and who started it (`S
 |---|---|
 | `Cause` | an id for what caused it (your event's id): one cause starts one run, however often the event comes |
 | `Exits` | for a step of a process (a workflow's), the exits the agent may choose: it then has its own tool `finish_step`, and `AgentRunFinished.Exit` says which it chose |
-| `Chain` | your own chain of automation, in your words (Toda's is its rules' cause chain, one deeper). The run keeps it and hands it back on every act as `AgentActing.Chain`, so put it around what the run does, and your loop rules hold for agents' writes as for your rules' |
+| `Chain` | your own chain of automation, in your words (a rules engine's cause chain, one deeper). The run keeps it and hands it back on every act as `AgentActing.Chain`, so put it around what the run does, and your loop rules hold for agents' writes as for your rules' |
 | `CausedInChangeSet` | the change set of the act that caused it, when you know it: an act of the agent's own run is in that run's change set, so it never starts the agent again (two agents that mention each other, an agent that mentions itself) |
 | `ActorId` | whose rights a run no person started uses, when not the agent's own role: a rule's actor, a workflow's account. The run still counts as the system's for asking first: its questions go to the agent's responsible person, and no one's standing permissions apply |
 | `Sender` | who outside the team started it (a customer's mention): one sender's runs are capped per day |
@@ -47,7 +47,7 @@ show. Beside the agent, the item, the trigger, the prompt and who started it (`S
 ends by an exit: the run's id, cause and item, the exit (null for the step's usual one) and when the run started. Answer
 with what's still missing, in words the agent can act on ("the field Risk filled in (update_record)"); nothing missing,
 an empty list. A `finish_step` whose exit isn't ready is refused with what's missing, and a final answer is answered with
-it, at most `AgentRunner.MaxReminders` (2) times; after that the run ends as it is, and your step decides (Toda's leaves
+it, at most `AgentRunner.MaxReminders` (2) times; after that the run ends as it is, and your step decides (it may leave
 by "failed"). Without a registration nothing is checked. The sample host's `SampleExitChecks` wants a ticket's priority
 high before "solved".
 
@@ -57,12 +57,12 @@ its answer is the work, posted on the item.
 
 **Limits and memory.** Runs stop at their limits (the agent's own, else `AgentsOptions`), wait their turn past the
 runs-at-once caps, and a person has only so many runs going. Your `IAgentSite.WhyNotOnAsync` can refuse turning agents
-on until something is set up (Toda wants the site's monthly AI cost limit). Agents keep short memories about items:
+on until something is set up (the site's monthly AI cost limit, say). Agents keep short memories about items:
 answer `IAgentItemKind.NeighboursAsync` with the items linked to one, as the actor reads, and `recall` looks near
 them too. Your host maps `agents.agent_memories` (`IAgentsDbContext.AgentMemories`); on erasing a person, call
 `AgentMemoryService.ForgetPersonAsync`.
 
-**Chats.** `AgentChatService` gives a person their own chats with an agent (ADR 0102): in a scope they may read, or
+**Chats.** `AgentChatService` gives a person their own chats with an agent: in a scope they may read, or
 about an item there. Each message is a run with the trigger `chat` and their rights, so every rule above holds; it gets
 the chat so far as the model's own turns (the newest 20 exchanges within 60,000 characters) and starts marked as the
 chat's earlier runs were. Its reply stays in the chat: the package doesn't post it on the item, hides it from everyone
@@ -76,7 +76,7 @@ no rule acts on what someone asked in private.
 A run doesn't start, and says why, when agents are off, the agent is paused or its scope hasn't taken it on, whoever
 started it (or whose rights it would use) can't read the item, the cause has a run already, the agent's own act caused
 it, or a day's cap is reached. Past a cap, `IAgentEvents.RunsCappedAsync`
-is called every time; tell the agent's responsible person once a day, as Toda does.
+is called every time; tell the agent's responsible person once a day, say.
 
 Services take an `AgentActor`. The ones only a site admin may call (`SwitchAsync`, `ListAsync`, `CreateSiteAsync`)
 take the account's id: check it's a site admin before you call them, as the sample's controller does.
@@ -93,7 +93,7 @@ The `Agents` section (`AgentsOptions`):
 | `QuestionTimeout` | 1 day | how long a run waits for an answer before it's refused |
 | `MaxRunsPerAgentPerDay` | 200 | the runs one agent may start in a day, from every trigger |
 | `MaxRunsPerSenderPerDay` | 20 | the runs one sender from outside the team may start in a day |
-| `ProductName` | Toda | what the agent's persona says it works in |
+| `ProductName` | this system | what the agent's persona says it works in: set your product's name |
 | `ScopeNoun` | scope | what messages call a scope ("project", "desk") |
 | `OperatorSettingName` | Agents:AdminsMayEnable | the setting the operator is told to set, if you bind another section |
 
@@ -140,8 +140,8 @@ The package throws ABP's exceptions. Two codes have their own status:
 
 | Code | Status | When |
 |---|---|---|
-| `Toda.Agents:Forbidden` (`AgentErrorCodes.Forbidden`) | 403 | the actor may not administer the agent or scope, or stop the run |
-| `Toda.Agents:Conflict` (`AgentErrorCodes.Conflict`) | 409 | undoing a run that's still going; answering a question answered already |
+| `AbpAgent:Forbidden` (`AgentErrorCodes.Forbidden`) | 403 | the actor may not administer the agent or scope, or stop the run |
+| `AbpAgent:Conflict` (`AgentErrorCodes.Conflict`) | 409 | undoing a run that's still going; answering a question answered already |
 
 Map them with `AbpExceptionHttpStatusCodeOptions`, as the sample does. Other refusals are `UserFriendlyException` with
 a message for the person; something not found is `EntityNotFoundException`.
@@ -154,5 +154,5 @@ one. A server that stops mid-run leaves its lease to run out, and another server
 started is then unknown, as [concepts](concepts.md) explains.
 
 A host with a job system replaces `IAgentRunQueue`: queue a job in `EnqueueAsync` (return its id, which is kept on the
-run), and have the job call `AgentRunner.TurnAsync` until it says the run is over. Toda runs agents as its jobs this
+run), and have the job call `AgentRunner.TurnAsync` until it says the run is over. A host with its own jobs runs agents this
 way. The package's worker stands aside when the queue isn't its own.
