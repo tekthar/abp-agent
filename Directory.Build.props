@@ -7,19 +7,19 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
     <!-- One version for every package (see README.md, "Releasing", and CHANGELOG.md); a VersionSuffix makes a prerelease. -->
-    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionPrefix>0.2.0</VersionPrefix>
     <VersionSuffix>preview.1</VersionSuffix>
 
     <Authors>AbpAgent contributors</Authors>
     <Company>Tekthar</Company>
     <Copyright>Copyright 2026 AbpAgent contributors</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/todahq/toda-agents</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/todahq/toda-agents.git</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/tekthar/abp-agent</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/tekthar/abp-agent.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>ai;agents;llm;tool-use;abp;efcore;postgresql</PackageTags>
-    <PackageReleaseNotes>https://github.com/todahq/toda-agents/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>https://github.com/tekthar/abp-agent/blob/main/CHANGELOG.md</PackageReleaseNotes>
 
     <!-- Debugging into the packages: SourceLink (built into the .NET SDK) and a symbol package next to each .nupkg. -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>

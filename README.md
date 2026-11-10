@@ -122,13 +122,21 @@ dotnet run --project samples/AbpAgent.SampleHost --urls http://localhost:5320
 ## Releasing
 
 The version is `VersionPrefix` and `VersionSuffix` in `Directory.Build.props`, and `CHANGELOG.md` needs an entry for
-it. Pushing the tag `v<version>`, such as `v0.1.0-preview.1`, runs the checks. GitHub Actions then pushes the packages
+it. Pushing the tag `v<version>`, such as `v0.2.0-preview.1`, runs the checks. GitHub Actions then pushes the packages
 to nuget.org and makes a GitHub release.
 
-Publishing uses nuget.org's Trusted Publishing, so no API key is stored anywhere: nuget.org gives the release job a key
-that lasts an hour. It needs a Trusted Publishing policy on nuget.org for this repository, the workflow file `ci.yml`
-and the environment `release`, and the repository variable `NUGET_USER` set to the nuget.org account that owns the
-packages.
+Publishing uses nuget.org's [Trusted Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing),
+so no API key is stored anywhere: nuget.org gives the release job a key that lasts an hour. Set it up once:
+
+1. **On nuget.org**, signed in as the account (or organization) that will own the packages: your name, **Trusted
+   Publishing**, add a policy with owner `tekthar`, repository `abp-agent`, workflow file `ci.yml` (the file name only)
+   and environment `release`. Let it publish new packages, for packages matching `AbpAgent*`.
+2. **On GitHub**, in the repository's **Settings**:
+   - **Environments:** add `release`. Limit it to tags `v*` and, if you like, require a reviewer, so a tag waits for
+     a person before anything is pushed.
+   - **Secrets and variables, Actions, Variables:** add `NUGET_USER`, the nuget.org profile name (not the email) of
+     the account in step 1.
+3. **Release:** push the tag, `git tag v<version> && git push origin v<version>`.
 
 ## Contributing
 

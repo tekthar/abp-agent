@@ -6,6 +6,11 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-preview.1] - 2026-11-10
+
+The first release as AbpAgent, from its own repository, https://github.com/tekthar/abp-agent. The releases below
+were published under the old ids.
+
 ### Changed
 
 - **Renamed to AbpAgent**, so the package names no product it came from (docs/adr/0001-independent-of-any-host.md).
