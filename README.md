@@ -122,7 +122,7 @@ dotnet run --project samples/AbpAgent.SampleHost --urls http://localhost:5320
 ## Releasing
 
 The version is `VersionPrefix` and `VersionSuffix` in `Directory.Build.props`, and `CHANGELOG.md` needs an entry for
-it. Pushing the tag `v<version>`, such as `v0.2.0-preview.1`, runs the checks. GitHub Actions then pushes the packages
+it. Pushing the tag `v<version>`, such as `v0.2.0`, runs the checks. GitHub Actions then pushes the packages
 to nuget.org and makes a GitHub release.
 
 Publishing uses nuget.org's [Trusted Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing),

@@ -8,7 +8,6 @@
 
     <!-- One version for every package (see README.md, "Releasing", and CHANGELOG.md); a VersionSuffix makes a prerelease. -->
     <VersionPrefix>0.2.0</VersionPrefix>
-    <VersionSuffix>preview.1</VersionSuffix>
 
     <Authors>AbpAgent contributors</Authors>
     <Company>Tekthar</Company>
