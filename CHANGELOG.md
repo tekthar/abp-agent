@@ -6,6 +6,13 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- An application with no generic host (an ABP integrated test, a console host made with `AbpApplicationFactory`) couldn't
+  make `AgentRunHere`, so nothing that queues a run could be made either: 0.3.0 took `IHostApplicationLifetime` in its
+  constructor. It's optional now; with no host, a chat's run started here stops when the application's services are
+  disposed.
+
 ## [0.3.0] - 2026-11-12
 
 Live chats (A1). What a host changes: map the new table (`IAgentsDbContext.AgentChatEvents`, `agents.agent_chat_events`)

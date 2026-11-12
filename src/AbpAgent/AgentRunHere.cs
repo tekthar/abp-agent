@@ -10,12 +10,25 @@ namespace AbpAgent;
 /// Works a chat's run on the server that took its message as soon as there's room (A1), rather than after the work ahead
 /// of it in the host's queue: its person is waiting for the reply. It holds the run's lease, renewed while it works; if
 /// the server stops, the lease runs out and the run goes back to the queue (<see cref="AgentRunLine.QueueWaitingAsync"/>,
-/// or the package's own worker), where another server takes it on from its last step.
+/// or the package's own worker), where another server takes it on from its last step. It stops with the host
+/// (<see cref="IHostApplicationLifetime.ApplicationStopping"/>); an application with no generic host (an ABP test or
+/// console application) has none, and it stops when the application's services are disposed instead.
 /// </summary>
-public sealed class AgentRunHere(IServiceScopeFactory scopes, IHostApplicationLifetime lifetime, ILogger<AgentRunHere> logger) : ISingletonDependency
+public sealed class AgentRunHere(IServiceScopeFactory scopes, IServiceProvider services, ILogger<AgentRunHere> logger) : ISingletonDependency, IDisposable
 {
+    private readonly CancellationTokenSource _disposed = new();
+
     /// <summary>How long a lease lasts without being renewed.</summary>
     public static readonly TimeSpan Lease = AgentRunWorker.Lease;
+
+    /// <summary>When the host stops, or with no generic host, when this is disposed.</summary>
+    private CancellationToken Stopping => services.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? _disposed.Token;
+
+    public void Dispose()
+    {
+        _disposed.Cancel();
+        _disposed.Dispose();
+    }
 
     /// <summary>Takes the run's lease for this server: true when it was free (no job, no lease or one run out) and the run hasn't ended.</summary>
     public static async Task<bool> TakeAsync(AgentsDb agentsDb, Guid runId, CancellationToken ct)
@@ -36,7 +49,7 @@ public sealed class AgentRunHere(IServiceScopeFactory scopes, IHostApplicationLi
     {
         using (ExecutionContext.SuppressFlow())
         {
-            _ = Task.Run(() => WorkAsync(runId, lifetime.ApplicationStopping));
+            _ = Task.Run(() => WorkAsync(runId, Stopping));
         }
     }
 
