@@ -6,6 +6,13 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Making an agent (`CreateSiteAsync`, `CreateForScopeAsync`) now keeps the `AgentChange.Memory` and
+  `AgentChange.Limits` it is given. Before, only `UpdateAsync` applied them, so an agent made with `Memory = false`
+  still kept memories, and its own limits waited for a change. A host that changed them right after making the
+  agent can drop that call.
+
 ## [0.2.0] - 2026-11-10
 
 The first release as AbpAgent, from its own repository, https://github.com/tekthar/abp-agent. The releases below

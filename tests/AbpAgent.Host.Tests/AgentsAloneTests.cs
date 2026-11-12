@@ -217,6 +217,28 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task An_agent_made_with_memory_off_and_its_own_limits_keeps_them_and_one_made_without_them_has_the_defaults()
+    {
+        await SendAsync(HttpMethod.Put, "/api/agents/settings", Admin, new { enabled = true });
+        JsonElement careful = await SendAsync(HttpMethod.Post, "/api/agents", Admin, new
+        {
+            key = "careful", offerAll = true, instructions = "demo-answer: Done.", memory = false,
+            limits = new { maxTurns = 3, maxToolCalls = 7, maxMinutes = 4, maxRunCost = 1.5m },
+        });
+        Assert.False(careful.GetProperty("memory").GetBoolean());
+        JsonElement limits = careful.GetProperty("limits");
+        Assert.Equal(3, limits.GetProperty("maxTurns").GetInt32());
+        Assert.Equal(7, limits.GetProperty("maxToolCalls").GetInt32());
+        Assert.Equal(4, limits.GetProperty("maxMinutes").GetInt32());
+        Assert.Equal(1.5m, limits.GetProperty("maxRunCost").GetDecimal());
+
+        JsonElement plain = await SendAsync(HttpMethod.Post, "/api/agents", Admin, new { key = "plain", offerAll = true, instructions = "demo-answer: Done." });
+        Assert.True(plain.GetProperty("memory").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, plain.GetProperty("limits").GetProperty("maxTurns").ValueKind);
+        Assert.Equal(JsonValueKind.Null, plain.GetProperty("limits").GetProperty("maxRunCost").ValueKind);
+    }
+
+    [Fact]
     public async Task A_write_a_stop_left_unknown_is_named_to_the_agent_not_repeated()
     {
         string agent = await SetUpAgentAsync("resumer", "demo-answer: I checked first.");

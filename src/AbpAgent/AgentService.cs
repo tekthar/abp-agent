@@ -242,8 +242,14 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
             OfferedTo = offered,
             Tools = input.Tools ?? [],
             TranscriptDays = input.TranscriptDays is > 0 and var days ? days : null,
+            Memory = input.Memory ?? true,
             UpdatedBy = me,
         };
+        if (input.Limits is { } limits)
+        {
+            SetLimits(agent, limits);
+        }
+
         await agentsDb.RunAsync(async db =>
         {
             db.Agents.Add(agent);
@@ -316,10 +322,7 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
 
             if (input.Limits is { } limits)
             {
-                agent.MaxTurns = limits.MaxTurns is > 0 ? limits.MaxTurns : null;
-                agent.MaxToolCalls = limits.MaxToolCalls is > 0 ? limits.MaxToolCalls : null;
-                agent.MaxMinutes = limits.MaxMinutes is > 0 ? limits.MaxMinutes : null;
-                agent.MaxRunCost = limits.MaxRunCost is > 0 ? limits.MaxRunCost : null;
+                SetLimits(agent, limits);
             }
 
             if (agent.ScopeId is null)
@@ -539,6 +542,15 @@ public partial class AgentService(AgentsDb agentsDb, IAgentAccounts accounts, IA
         return wanted.Count == found.Count
             ? [.. found.Values.Select(s => s.Id)]
             : throw new UserFriendlyException($"There's no {ScopeNoun} {string.Join(", ", wanted.Where(k => !found.ContainsKey(k)))}.");
+    }
+
+    /// <summary>An agent's own run limits, as given: one that's left out or 0 falls back to the site's.</summary>
+    private static void SetLimits(Agent agent, AgentRunLimits limits)
+    {
+        agent.MaxTurns = limits.MaxTurns is > 0 ? limits.MaxTurns : null;
+        agent.MaxToolCalls = limits.MaxToolCalls is > 0 ? limits.MaxToolCalls : null;
+        agent.MaxMinutes = limits.MaxMinutes is > 0 ? limits.MaxMinutes : null;
+        agent.MaxRunCost = limits.MaxRunCost is > 0 ? limits.MaxRunCost : null;
     }
 
     private static void Check(AgentChange input)
