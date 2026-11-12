@@ -7,7 +7,8 @@ namespace AbpAgent;
 /// An agent's text as it's written, given on a Markdown block at a time, each block cleaned (<see cref="AgentText.Clean"/>)
 /// before it's given, so a link or image never reaches a reader, not even for a moment. A block is what Markdown can't
 /// read across: a paragraph (up to a blank line), a heading, a table row, a list item (up to the next item), or a fenced
-/// code block (up to its closing fence). Each piece is given only if what's been given, with it, still cleans to itself, so
+/// code block (up to its closing fence); and a plain paragraph a sentence at a time, once it has some length, so a
+/// one-paragraph reply shows as it's written too. Each piece is given only if what's been given, with it, still cleans to itself, so
 /// no image or link can be made across two of them (a list item that was really a paragraph's next line, say): one that
 /// would is held back and given with the next, and at the end, escaped whole. A reply's final text is cleaned whole as
 /// the run keeps it, and replaces what was streamed.
@@ -19,6 +20,15 @@ public sealed partial class AgentTextStream
     private readonly StringBuilder _given = new();
     private string? _fence;
 
+    /// <summary>The start of the line being written was given (a sentence): the rest is the same paragraph's.</summary>
+    private bool _midLine;
+
+    /// <summary>The block so far is a plain paragraph, which may be given a sentence at a time.</summary>
+    private bool _plain;
+
+    /// <summary>The least a paragraph so far holds before a sentence of it is given on its own.</summary>
+    private const int SentenceAtLeast = 40;
+
     /// <summary>Text the model wrote; the blocks it completed, cleaned, each with the newlines after it.</summary>
     public IReadOnlyList<string> Append(string text)
     {
@@ -28,8 +38,21 @@ public sealed partial class AgentTextStream
             _line.Append(c);
             if (c == '\n')
             {
-                Line(_line.ToString(), done);
+                if (_midLine)
+                {
+                    _block.Append(_line);
+                    (_midLine, _plain) = (false, true);
+                }
+                else
+                {
+                    Line(_line.ToString(), done);
+                }
+
                 _line.Clear();
+            }
+            else if (c == ' ' && SentenceEnded())
+            {
+                GiveSoFar(done);
             }
         }
 
@@ -42,6 +65,7 @@ public sealed partial class AgentTextStream
         _block.Append(_line);
         _line.Clear();
         _fence = null;
+        _midLine = false;
         if (_block.Length == 0)
         {
             return "";
@@ -52,6 +76,41 @@ public sealed partial class AgentTextStream
         _given.Append(piece);
         return piece;
     }
+
+    /// <summary>A plain paragraph's sentence just ended (its mark and a space), and the paragraph so far is long enough to give.</summary>
+    private bool SentenceEnded()
+    {
+        if (_fence is not null || _line.Length < 2 || ".!?\u061F\u3002".IndexOf(_line[^2]) < 0 || _block.Length + _line.Length < SentenceAtLeast)
+        {
+            return false;
+        }
+
+        if (_midLine)
+        {
+            return true;
+        }
+
+        string line = _line.ToString();
+        return _block.Length > 0 ? _plain : !Marked(line);
+    }
+
+    /// <summary>The paragraph so far, line and all, given cleaned when that's safe; the rest of its line comes after.</summary>
+    private void GiveSoFar(List<string> done)
+    {
+        if (Safe(AgentText.Clean(_block.ToString() + _line)) is not { } piece)
+        {
+            return;
+        }
+
+        _block.Clear();
+        _line.Clear();
+        _given.Append(piece);
+        done.Add(piece);
+        _midLine = true;
+    }
+
+    /// <summary>A line that starts something other than a plain paragraph: a fence, a heading, a table row, a list item, a quote.</summary>
+    private static bool Marked(string line) => FenceOf(line) is not null || OneLine().IsMatch(line) || ListItem().IsMatch(line) || line.TrimStart().StartsWith('>');
 
     /// <summary>The piece, when what's been given with it still cleans to itself; else null.</summary>
     private string? Safe(string piece)
@@ -101,6 +160,11 @@ public sealed partial class AgentTextStream
         if (ListItem().IsMatch(line))
         {
             Give(done); // the item before it, if any, is done
+        }
+
+        if (_block.Length == 0)
+        {
+            _plain = !Marked(line);
         }
 
         _block.Append(line);

@@ -64,6 +64,28 @@ public class AgentTextStreamTests
         Assert.Contains("(https://evil.example/2)", cleaned, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(5)]
+    public void A_long_paragraph_is_given_a_sentence_at_a_time_and_a_link_across_a_sentence_still_never_shows(int size)
+    {
+        const string plain = "The printer jams on the second page. It does so only with the thick paper. The thin paper goes through.\n\n";
+        List<string> given = Streamed(plain, size);
+        Assert.True(given.Count >= 2, string.Join(" | ", given)); // the first two sentences together (the first is short), then the last
+        Assert.Equal(plain, string.Concat(given));
+
+        const string across = "The printer jams on the second page, so [read this. Then click](https://evil.example/x) now. And more after it.\n\nNext.\n";
+        List<string> pieces = Streamed(across, size);
+        string joined = string.Concat(pieces);
+        Assert.Equal(joined, AgentText.Clean(joined));
+        Assert.DoesNotContain("](https://", joined, StringComparison.Ordinal);
+        foreach (int end in Enumerable.Range(1, pieces.Count))
+        {
+            string prefix = string.Concat(pieces.Take(end));
+            Assert.Equal(prefix, AgentText.Clean(prefix));
+        }
+    }
+
     [Fact]
     public void A_fenced_code_block_is_given_whole_with_its_blank_lines()
     {

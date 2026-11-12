@@ -18,8 +18,8 @@ optionally stream from your model with `IAgentModels.StreamAsync`.
   `question`, `run`, `ping`) and `AgentChatService.EventsAsync`, which checks the chat is the actor's, then gives its
   events in order while a run goes, resumable after an event's id. A chat's events go when its next run starts, when it's
   deleted or its person erased (`AgentChatService.ForgetAsync`), and after a day.
-- `AgentTextStream`: a reply's text a Markdown block at a time, each block cleaned before it's given, and given only if
-  what's been given with it still cleans to itself.
+- `AgentTextStream`: a reply's text a Markdown block at a time (and a plain paragraph a sentence at a time), each piece
+  cleaned before it's given, and given only if what's been given with it still cleans to itself.
 - A chat's run starts on the server that took its message when there's room (`AgentRunHere`,
   `AgentsOptions.ChatRunsStartHere`, on by default), holding its lease; a run whose lease ran out with no job goes back
   to the queue (`AgentRunLine.QueueWaitingAsync`).
