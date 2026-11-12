@@ -6,6 +6,8 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-12
+
 ### Fixed
 
 - An application with no generic host (an ABP integrated test, a console host made with `AbpApplicationFactory`) couldn't
