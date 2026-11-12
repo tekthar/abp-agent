@@ -6,6 +6,8 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-12
+
 ### Fixed
 
 - Making an agent (`CreateSiteAsync`, `CreateForScopeAsync`) now keeps the `AgentChange.Memory` and
