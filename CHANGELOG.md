@@ -6,9 +6,11 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
 Live chats (A1). What a host changes: map the new table (`IAgentsDbContext.AgentChatEvents`, `agents.agent_chat_events`)
-and the new column (`agent_runs.ErrorCode`) and add a migration; serve `AgentChatService.EventsAsync` as server-sent events (see docs/hosting.md, "Live chats");
-optionally stream from your model with `IAgentModels.StreamAsync`.
+and the new column (`agent_runs.ErrorCode`) and add a migration; serve `AgentChatService.EventsAsync` as server-sent
+events (see docs/hosting.md, "Live chats"); optionally stream from your model with `IAgentModels.StreamAsync`.
 
 ### Added
 
