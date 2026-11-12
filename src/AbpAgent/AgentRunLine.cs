@@ -7,16 +7,28 @@ namespace AbpAgent;
 /// One run per agent per item at a time, and only so many at once (section 7): a run is queued in
 /// the host's queue only when the agent has no other run going on its item, has fewer than its share working, and the
 /// site has room; the others wait, queued, in order, and the next is queued when one ends (and every few minutes, in
-/// case a server stopped). Ending also tells the host (<see cref="IAgentEvents"/>).
+/// case a server stopped). A chat's run, with room, starts on this server instead (<see cref="AgentRunHere"/>). Ending
+/// also tells the host (<see cref="IAgentEvents"/>).
 /// </summary>
-public sealed class AgentRunLine(AgentsDb agentsDb, IAgentRunQueue queue, IAgentEvents events, Microsoft.Extensions.Options.IOptions<AgentsOptions> options)
-    : ITransientDependency
+public sealed class AgentRunLine(AgentsDb agentsDb, IAgentRunQueue queue, IAgentEvents events, AgentRunHere here,
+    Microsoft.Extensions.Options.IOptions<AgentsOptions> options) : ITransientDependency
 {
     /// <summary>Queues the run unless an earlier one of the same agent on the same item is still going, or there's no room; then it waits its turn.</summary>
     public async Task QueueAsync(AgentRun run, string title, CancellationToken ct)
     {
         if (run.ItemId is { } item && await agentsDb.RunAsync(db => Ahead(db, run.Id, run.AgentId, item, run.CreatedAt).AnyAsync(ct), cancellationToken: ct))
         {
+            return;
+        }
+
+        // A chat's person is waiting: with room, this server works it now, rather than after the work ahead of it.
+        if (run.ChatId is not null && options.Value.ChatRunsStartHere && !await FullAsync(run, ct))
+        {
+            if (await AgentRunHere.TakeAsync(agentsDb, run.Id, ct))
+            {
+                here.Start(run.Id);
+            }
+
             return;
         }
 
@@ -56,9 +68,13 @@ public sealed class AgentRunLine(AgentsDb agentsDb, IAgentRunQueue queue, IAgent
             return;
         }
 
-        DateTime settled = DateTime.UtcNow.AddSeconds(-2); // one just made is being queued by whoever made it
+        DateTime now = DateTime.UtcNow;
+        DateTime settled = now.AddSeconds(-2); // one just made is being queued by whoever made it
+        // Waiting for room, or worked by a server that stopped (its lease ran out, with no job of the host's).
         List<AgentRun> waiting = await agentsDb.RunAsync(db => db.AgentRuns.AsNoTracking()
-            .Where(r => r.State == AgentRunStates.Queued && r.JobId == null && r.CreatedAt < settled).OrderBy(r => r.CreatedAt).Take(20).ToListAsync(ct),
+            .Where(r => r.JobId == null && (r.LeasedUntil == null || r.LeasedUntil < now)
+                && ((r.State == AgentRunStates.Queued && r.CreatedAt < settled) || (r.State == AgentRunStates.Running && r.LeasedUntil != null)))
+            .OrderBy(r => r.CreatedAt).Take(20).ToListAsync(ct),
             cancellationToken: ct);
         foreach (AgentRun run in waiting)
         {

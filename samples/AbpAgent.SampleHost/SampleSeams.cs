@@ -327,7 +327,7 @@ public sealed partial class ScriptedModel : IAgentModels, ITransientDependency
             string given = messages.Any(m => m?["content"] is JsonValue v && v.TryGetValue(out string? text) && text.Contains("<memories about=", StringComparison.Ordinal))
                 ? "yes" : "no";
             string answer = (Answer().Match(request.System) is { Success: true } a ? a.Groups["text"].Value.Trim() : "Done.")
-                .Replace("$turn", turn, StringComparison.Ordinal).Replace("$memories", given, StringComparison.Ordinal);
+                .Replace("$turn", turn, StringComparison.Ordinal).Replace("$memories", given, StringComparison.Ordinal).Replace("\\n", "\n", StringComparison.Ordinal);
             message = new JsonObject
             {
                 ["role"] = "assistant", ["stop_reason"] = "end_turn", ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = answer }),
@@ -336,6 +336,60 @@ public sealed partial class ScriptedModel : IAgentModels, ITransientDependency
 
         return Task.FromResult(new AgentModelReply(JsonSerializer.SerializeToElement(message), "scripted", 10, 5, 0m));
     }
+
+    /// <summary>
+    /// The scripted reply as a model streams it: its text seven characters at a time, as the Messages API's events.
+    /// "demo-slow: {ms}" waits between pieces; "demo-break: {n}" ends with an error event after n characters;
+    /// "demo-throw" throws instead of answering.
+    /// </summary>
+    public async IAsyncEnumerable<AgentModelEvent> StreamAsync(AgentModelRequest request,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (request.System.Contains("demo-throw", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The sample's model fell over.");
+        }
+
+        AgentModelReply reply = await CompleteAsync(request, cancellationToken);
+        JsonObject message = JsonNode.Parse(reply.Message.GetRawText())!.AsObject();
+        string? text = (message["content"] as JsonArray)?.FirstOrDefault(b => (string?)b?["type"] == "text") is { } block ? (string?)block["text"] : null;
+        if (text is not null)
+        {
+            int slow = Slow().Match(request.System) is { Success: true } s ? int.Parse(s.Groups["ms"].Value, System.Globalization.CultureInfo.InvariantCulture) : 0;
+            int? cut = Break().Match(request.System) is { Success: true } b ? int.Parse(b.Groups["n"].Value, System.Globalization.CultureInfo.InvariantCulture) : null;
+            yield return Event("message_start", new { type = "message_start", message = new { model = "scripted", usage = new { input_tokens = 10, output_tokens = 0 } } });
+            yield return Event("content_block_start", new { type = "content_block_start", index = 0, content_block = new { type = "text", text = "" } });
+            for (int at = 0; at < text.Length; at += 7)
+            {
+                if (cut is { } n && at >= n)
+                {
+                    yield return Event("error", new { type = "error", error = new { type = "overloaded_error", message = "The sample's model was cut off." } });
+                    yield break;
+                }
+
+                if (slow > 0)
+                {
+                    await Task.Delay(slow, cancellationToken);
+                }
+
+                yield return Event("content_block_delta",
+                    new { type = "content_block_delta", index = 0, delta = new { type = "text_delta", text = text.Substring(at, Math.Min(7, text.Length - at)) } });
+            }
+
+            yield return Event("content_block_stop", new { type = "content_block_stop", index = 0 });
+            yield return Event("message_stop", new { type = "message_stop" });
+        }
+
+        yield return AgentModelEvent.Finished(reply);
+    }
+
+    private static AgentModelEvent Event(string name, object data) => new(name, JsonSerializer.SerializeToElement(data));
+
+    [GeneratedRegex(@"^demo-slow: (?<ms>\d+)\s*$", RegexOptions.Multiline, TimeoutMilliseconds)]
+    private static partial Regex Slow();
+
+    [GeneratedRegex(@"^demo-break: (?<n>\d+)\s*$", RegexOptions.Multiline, TimeoutMilliseconds)]
+    private static partial Regex Break();
 
     [GeneratedRegex(@"^demo: (?<tool>[a-z_]+) (?<input>\{.*\})\s*$", RegexOptions.Multiline, TimeoutMilliseconds)]
     private static partial Regex Line();

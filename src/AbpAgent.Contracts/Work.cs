@@ -197,10 +197,48 @@ public sealed class AgentModelRefusedException(string code, string message) : Ex
     public string Code { get; } = code;
 }
 
+/// <summary>
+/// One event of a streamed reply, in the Messages API's events (<c>message_start</c>, <c>content_block_delta</c>…), or the
+/// last one, <see cref="Done"/>, which carries the whole reply instead (<see cref="Reply"/>): the message put together,
+/// the model, the tokens and the cost, as <see cref="IAgentModels.CompleteAsync"/> would have answered.
+/// </summary>
+public sealed record AgentModelEvent(string Event, JsonElement Data)
+{
+    /// <summary>The last event's name: the reply is whole.</summary>
+    public const string Done = "abpagent.done";
+
+    /// <summary>The whole reply, on the last event only.</summary>
+    public AgentModelReply? Reply { get; init; }
+
+    /// <summary>The last event, with the whole reply.</summary>
+    public static AgentModelEvent Finished(AgentModelReply reply) => new(Done, reply.Message) { Reply = reply };
+}
+
 /// <summary>The host's model: an AI gateway with its aliases, limits and providers.</summary>
 public interface IAgentModels
 {
     Task<AgentModelReply> CompleteAsync(AgentModelRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The reply as the model writes it: the Messages API's events, then <see cref="AgentModelEvent.Finished"/> with the
+    /// whole reply. A stream that fails partway ends with the Messages API's <c>error</c> event, or throws; either way the
+    /// run fails with the error and keeps no answer, and a refusal before the first event is
+    /// <see cref="AgentModelRefusedException"/> as from <see cref="CompleteAsync"/>. The default, for a host that can't
+    /// stream: the whole reply at once.
+    /// </summary>
+    IAsyncEnumerable<AgentModelEvent> StreamAsync(AgentModelRequest request, CancellationToken cancellationToken) =>
+        AgentModelStreams.WholeAsync(this, request, cancellationToken);
+}
+
+/// <summary>Streams for a host's model.</summary>
+public static class AgentModelStreams
+{
+    /// <summary>A host that can't stream: its whole reply, as the one last event.</summary>
+    public static async IAsyncEnumerable<AgentModelEvent> WholeAsync(IAgentModels models, AgentModelRequest request,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        yield return AgentModelEvent.Finished(await models.CompleteAsync(request, cancellationToken));
+    }
 }
 
 /// <summary>

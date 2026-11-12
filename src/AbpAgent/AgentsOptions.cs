@@ -65,4 +65,17 @@ public class AgentsOptions
 
     /// <summary>What a site admin is told when the operator hasn't allowed agents: where the setting is.</summary>
     public string OperatorSettingName { get; set; } = "Agents:AdminsMayEnable";
+
+    /// <summary>
+    /// Whether a chat's run starts on the server that took its message, when there's room, rather than wait in the host's
+    /// queue behind other work: its person is waiting for the reply (A1). It holds a lease; if the server stops, the run
+    /// goes back to the queue once the lease runs out.
+    /// </summary>
+    public bool ChatRunsStartHere { get; set; } = true;
+
+    /// <summary>How often a reader of a chat's events on another server than its run's looks for new ones.</summary>
+    public TimeSpan ChatEventsPoll { get; set; } = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>The longest one read of a chat's events lasts: its reader comes back with the last id it had.</summary>
+    public TimeSpan ChatEventsMost { get; set; } = TimeSpan.FromMinutes(10);
 }

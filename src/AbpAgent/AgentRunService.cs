@@ -267,6 +267,7 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
                         return (null, ChatGoing, null);
                     }
 
+                    await AgentChatEvents.LetGoAsync(db, talk.Id, ct);
                     outside = await db.AgentRuns.AnyAsync(r => r.ChatId == talk.Id && r.Outside, ct);
                     wide = await db.AgentRuns.AnyAsync(r => r.ChatId == talk.Id && r.Wide, ct);
                     await db.AgentChats.Where(c => c.Id == talk.Id).ExecuteUpdateAsync(s => s.SetProperty(c => c.LastAt, DateTime.UtcNow), ct);

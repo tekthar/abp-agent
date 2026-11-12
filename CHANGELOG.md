@@ -6,6 +6,37 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+Live chats (A1). What a host changes: map the new table (`IAgentsDbContext.AgentChatEvents`, `agents.agent_chat_events`)
+and add a migration; serve `AgentChatService.EventsAsync` as server-sent events (see docs/hosting.md, "Live chats");
+optionally stream from your model with `IAgentModels.StreamAsync`.
+
+### Added
+
+- `IAgentModels.StreamAsync`, with a default that calls `CompleteAsync`: the Messages API's events, then
+  `AgentModelEvent.Finished` with the whole reply. The runner streams every model turn through it.
+- Chats' events: `AgentChatEvent` (`agents.agent_chat_events`), `AgentChatEventTypes` (`turn`, `text`, `step`,
+  `question`, `run`, `ping`) and `AgentChatService.EventsAsync`, which checks the chat is the actor's, then gives its
+  events in order while a run goes, resumable after an event's id. A chat's events go when its next run starts, when it's
+  deleted or its person erased (`AgentChatService.ForgetAsync`), and after a day.
+- `AgentTextStream`: a reply's text a Markdown block at a time, each block cleaned before it's given, and given only if
+  what's been given with it still cleans to itself.
+- A chat's run starts on the server that took its message when there's room (`AgentRunHere`,
+  `AgentsOptions.ChatRunsStartHere`, on by default), holding its lease; a run whose lease ran out with no job goes back
+  to the queue (`AgentRunLine.QueueWaitingAsync`).
+- `AgentsOptions.ChatEventsPoll` (half a second) and `ChatEventsMost` (ten minutes).
+
+### Changed
+
+- Any exception from the host's model, not only `AgentModelRefusedException`, ends the run Failed with "The model
+  didn't answer: its call failed (…)", and a stream that breaks off ends it with "The model's reply broke off: …"; neither
+  keeps an answer. A server stopping still leaves the run to be taken over.
+
+### Fixed
+
+- `AgentText.Clean` left a link uncleaned in a list item when its text was `x`, `X` or a space (`- see [x](address)`):
+  Markdig read it as a task list's checkbox, where a browser reads a link. The cleaner no longer reads task lists, so
+  every `[x](address)` is a link to it, and is cleaned.
+
 ## [0.2.1] - 2026-11-12
 
 ### Fixed

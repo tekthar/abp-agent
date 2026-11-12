@@ -25,6 +25,7 @@ public interface IAgentsDbContext : IEfCoreDbContext
     DbSet<AgentPermission> AgentPermissions { get; }
     DbSet<AgentChat> AgentChats { get; }
     DbSet<AgentMemory> AgentMemories { get; }
+    DbSet<AgentChatEvent> AgentChatEvents { get; }
 }
 
 /// <summary>Runs the agents' work in a unit of work: the caller's when there is one, or a new one.</summary>
@@ -129,6 +130,17 @@ public static class AgentsModel
             b.HasIndex(x => new { x.AgentId, x.ScopeId, x.LastUsedAt });
             b.HasIndex(x => new { x.ItemKind, x.ItemId });
             b.HasIndex(x => x.RememberedBy);
+        });
+
+        // What a chat's person sees happen while its run goes (A1): kept only for a reader catching up.
+        builder.Entity<AgentChatEvent>(b =>
+        {
+            b.ToTable("agent_chat_events", Schema);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.Type).HasMaxLength(20).IsRequired();
+            b.Property(x => x.Data).HasMaxLength(AgentChatEvent.MaxData).IsRequired();
+            b.HasIndex(x => new { x.ChatId, x.Id });
+            b.HasIndex(x => x.CreatedAt);
         });
 
         // People's chats with agents: each message is a run in agent_runs with its ChatId.

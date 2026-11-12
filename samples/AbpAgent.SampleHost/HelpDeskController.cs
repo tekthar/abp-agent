@@ -137,6 +137,26 @@ public class HelpDeskController(AgentService agents, AgentRunService runs, Agent
 
     [HttpDelete("agent-chats/{id:guid}")]
     public Task DeleteChat(Guid id, CancellationToken ct) => chats.DeleteAsync(Actor, id, ct);
+
+    /// <summary>
+    /// The chat's events as server-sent events while a run of it goes, each with its id: a reader that drops comes back
+    /// with Last-Event-ID and gets what it missed.
+    /// </summary>
+    [HttpGet("agent-chats/{id:guid}/events")]
+    public async Task<IResult> ChatEvents(Guid id, [FromHeader(Name = "Last-Event-ID")] long? after, CancellationToken ct) =>
+        TypedResults.ServerSentEvents(Sse(await chats.EventsAsync(Actor, id, after, ct), ct));
+
+    private static async IAsyncEnumerable<System.Net.ServerSentEvents.SseItem<System.Text.Json.JsonElement>> Sse(IAsyncEnumerable<AgentChatEventInfo> events,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        await foreach (AgentChatEventInfo e in events.WithCancellation(ct))
+        {
+            yield return new System.Net.ServerSentEvents.SseItem<System.Text.Json.JsonElement>(e.Data, e.Type)
+            {
+                EventId = e.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            };
+        }
+    }
 }
 
 public sealed record StartChatInput(Guid AgentId, string Prompt, string? Desk = null, string? Ticket = null);

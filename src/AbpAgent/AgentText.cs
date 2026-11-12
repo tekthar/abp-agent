@@ -23,7 +23,9 @@ namespace AbpAgent;
 /// </summary>
 public static class AgentText
 {
-    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().UsePreciseSourceLocation().UsePipeTables().UseTaskLists().Build();
+    // No task lists: Markdig reads "[x]" anywhere in a list item as a checkbox, where a browser reads "[x](address)" as a
+    // link, so a link with that text would go uncleaned. Without them, every "[x](address)" is a link here and is cleaned.
+    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().UsePreciseSourceLocation().UsePipeTables().Build();
 
     /// <summary>Cleans one Markdown text. Cleaning is repeated until nothing is left to clean; text it can't settle is escaped whole.</summary>
     public static string Clean(string? markdown)
@@ -159,7 +161,7 @@ public static class AgentText
     }
 
     /// <summary>Text that Markdown reads as written: its marks escaped, so it can't make a link, an image or HTML again.</summary>
-    private static string Escape(string text)
+    internal static string Escape(string text)
     {
         StringBuilder escaped = new(text.Length + 8);
         foreach (char c in text)

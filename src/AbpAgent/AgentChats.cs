@@ -148,6 +148,23 @@ public sealed class AgentChatService(AgentsDb agentsDb, AgentService agents, Age
     }
 
     /// <summary>
+    /// The chat's events after <paramref name="after"/> (the last id its reader had; none for all that are kept), in order
+    /// as they're written, while a run of it goes: text as the agent writes it, a Markdown block at a time and cleaned,
+    /// each step, a question, the run's end (<see cref="AgentChatEventTypes"/>). The stream ends once the last run's end is
+    /// given, or after <see cref="AgentsOptions.ChatEventsMost"/>; a reader comes back with the last id it had. A host
+    /// serves it as server-sent events, each event's id its <c>id</c>, and takes <c>Last-Event-ID</c> as
+    /// <paramref name="after"/>. Not found for anyone but the chat's person, before anything is read, so a host can say so
+    /// before it starts its stream.
+    /// </summary>
+    public async Task<IAsyncEnumerable<AgentChatEventInfo>> EventsAsync(AgentActor actor, Guid chatId, long? after, CancellationToken ct)
+    {
+        AgentChat chat = await OwnAsync(actor, chatId, ct);
+        AgentsOptions limits = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AgentsOptions>>().Value;
+        return AgentChatEvents.ReadAsync(agentsDb, services.GetRequiredService<AgentChatSignals>(), chat.Id, after ?? 0, limits.ChatEventsPoll,
+            limits.ChatEventsMost, ct);
+    }
+
+    /// <summary>
     /// Posts a reply on the chat's item, once: a comment by the agent, run by the actor, in the run's change set;
     /// for the team only when the run read outside content, and refused when it read beyond its scope.
     /// </summary>
@@ -252,6 +269,7 @@ public sealed class AgentChatService(AgentsDb agentsDb, AgentService agents, Age
         await db.AgentRuns.Where(r => r.ChatId != null && ids.Contains(r.ChatId.Value)).ExecuteUpdateAsync(s => s
             .SetProperty(r => r.Prompt, "").SetProperty(r => r.Answer, (string?)null).SetProperty(r => r.Conversation, (string?)null)
             .SetProperty(r => r.Paused, (string?)null).SetProperty(r => r.TranscriptGone, true), ct);
+        await AgentChatEvents.ForgetAsync(db, ids, ct);
         await db.AgentChats.Where(c => ids.Contains(c.Id)).ExecuteDeleteAsync(ct);
     }
 

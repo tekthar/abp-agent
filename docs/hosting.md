@@ -73,6 +73,28 @@ the static `ForgetAsync` (for erasing a person) leave runs who, when and each st
 its two chat tests show the whole of it. You'll want to skip your own "run finished" event for `AgentTriggers.Chat`, so
 no rule acts on what someone asked in private.
 
+**Live chats.** A chat's person sees the reply as it's written and each step as it happens. Three parts:
+
+- **Your model streams**, if it can: `IAgentModels.StreamAsync` gives the Messages API's events (`content_block_delta`
+  with `text_delta`, and so on), then `AgentModelEvent.Finished` with the whole reply, its model, tokens and cost, as
+  `CompleteAsync` would answer. Without it the package calls `CompleteAsync`, and the text arrives at the turn's end. A
+  stream that fails partway ends with the Messages API's `error` event, or throws; the run then fails with the error and
+  keeps no answer. Any other exception from your model fails the run too, with "its call failed".
+- **You serve its events**: `AgentChatService.EventsAsync(actor, chatId, after, ct)` checks the chat is the actor's
+  (not found otherwise) and gives its events in order while a run of it goes: `turn` (a model turn began), `text` (a
+  Markdown block of the reply, cleaned before it's sent, to append to its turn's text), `step` (a tool call started,
+  `outcome` null, and finished), `question` (the run asks its person), `run` (it ended: `state`, `error`), and `ping`
+  when nothing has come for a while. Serve it as server-sent events with each event's `Id` as its id, and take
+  `Last-Event-ID` as `after`: a reader that drops comes back and gets what it missed. The stream ends once the run's
+  end is given, or after `AgentsOptions.ChatEventsMost`. The sample host's `agent-chats/{id}/events` route is the whole
+  of it. The reply the run keeps is cleaned whole and replaces what was streamed.
+- **A chat's run starts here**: with room, the server that took the message works it at once
+  (`AgentsOptions.ChatRunsStartHere`), holding the run's lease, rather than leave it behind other work in your queue. If
+  that server stops, the lease runs out and the run goes back to your queue (or the package's worker) from its last step.
+
+A reader on the server that works the run is woken as each event is written; one on another server looks every
+`ChatEventsPoll` (half a second).
+
 A run doesn't start, and says why, when agents are off, the agent is paused or its scope hasn't taken it on, whoever
 started it (or whose rights it would use) can't read the item, the cause has a run already, the agent's own act caused
 it, or a day's cap is reached. Past a cap, `IAgentEvents.RunsCappedAsync`
@@ -106,7 +128,7 @@ context.Services.Configure<AgentsOptions>(o => o.OperatorSettingName = "MyApp:Ag
 
 ## The database
 
-`ConfigureAgents()` maps seven tables in schema `agents`:
+`ConfigureAgents()` maps these tables in schema `agents`:
 
 | Table | What |
 |---|---|
@@ -117,6 +139,9 @@ context.Services.Configure<AgentsOptions>(o => o.OperatorSettingName = "MyApp:Ag
 | `agent_run_steps` | each run's steps |
 | `agent_questions` | runs' questions, their answers and who gave them |
 | `agent_permissions` | people's standing permissions: an agent may run a tool in a scope in their runs without asking |
+| `agent_chats` | people's chats with agents |
+| `agent_memories` | what agents keep about items |
+| `agent_chat_events` | what a chat's person sees happen while its run goes; kept a day at most, and only the last run's |
 
 They need PostgreSQL: the run queue takes runs with `FOR UPDATE SKIP LOCKED`. Add them to your migrations with
 `dotnet ef migrations add`, as you would your own change. A new version of the package that changes them says so in
