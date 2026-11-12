@@ -43,7 +43,7 @@ public sealed class AgentRunHere(IServiceScopeFactory scopes, IHostApplicationLi
     private async Task WorkAsync(Guid runId, CancellationToken stopping)
     {
         using CancellationTokenSource working = CancellationTokenSource.CreateLinkedTokenSource(stopping);
-        Task renewing = RenewAsync(runId, working.Token);
+        Task renewing = KeepLeaseAsync(runId, working.Token);
         try
         {
             await using AsyncServiceScope scope = scopes.CreateAsyncScope();
@@ -60,7 +60,7 @@ public sealed class AgentRunHere(IServiceScopeFactory scopes, IHostApplicationLi
                 if (turn.Over)
                 {
                     await working.CancelAsync();
-                    await Quiet(renewing);
+                    await QuietAsync(renewing);
                     await scope.ServiceProvider.GetRequiredService<AgentsDb>().RunAsync(db => db.AgentRuns.Where(r => r.Id == runId)
                         .ExecuteUpdateAsync(s => s.SetProperty(r => r.LeasedUntil, (DateTime?)null), CancellationToken.None), requiresNew: true);
                 }
@@ -82,12 +82,15 @@ public sealed class AgentRunHere(IServiceScopeFactory scopes, IHostApplicationLi
         finally
         {
             await working.CancelAsync();
-            await Quiet(renewing);
+            await QuietAsync(renewing);
         }
     }
 
-    /// <summary>Renews the lease while the run is worked here, a quarter of a lease at a time.</summary>
-    private async Task RenewAsync(Guid runId, CancellationToken ct)
+    /// <summary>
+    /// Renews the run's lease while it's worked here, a quarter of a lease at a time, so a long turn (a slow model, tool
+    /// calls that take minutes) doesn't let another server take it over midway. The package's worker uses it too.
+    /// </summary>
+    internal async Task KeepLeaseAsync(Guid runId, CancellationToken ct)
     {
         await using AsyncServiceScope scope = scopes.CreateAsyncScope();
         AgentsDb agentsDb = scope.ServiceProvider.GetRequiredService<AgentsDb>();
@@ -107,7 +110,7 @@ public sealed class AgentRunHere(IServiceScopeFactory scopes, IHostApplicationLi
         }
     }
 
-    private static async Task Quiet(Task task)
+    internal static async Task QuietAsync(Task task)
     {
         try
         {

@@ -118,6 +118,12 @@ public class AgentRun : Entity<Guid>
 
     public string? Error { get; set; }
 
+    /// <summary>
+    /// What kind of error ended it, for a host to say in its people's language (<see cref="AgentRunErrorCodes"/>, or the
+    /// host's model's own refusal code, as <see cref="AgentModelRefusedException.Code"/>): null when it didn't fail.
+    /// </summary>
+    public string? ErrorCode { get; set; }
+
     public bool StopRequested { get; set; }
 
     public DateTime CreatedAt { get; private set; }

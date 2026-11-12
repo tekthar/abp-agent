@@ -121,21 +121,35 @@ public sealed class AgentRunWorker(IServiceScopeFactory scopes, IAgentRunQueue q
         }
 
         AgentRunner runner = scope.ServiceProvider.GetRequiredService<AgentRunner>();
+        // The lease is renewed while the run is worked, not only between turns: one turn can take longer than a lease.
+        using CancellationTokenSource working = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        Task renewing = scope.ServiceProvider.GetRequiredService<AgentRunHere>().KeepLeaseAsync(id, working.Token);
         try
         {
             AgentTurn turn;
             do
             {
                 turn = await runner.TurnAsync(id, ct);
-                await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == id)
-                    .ExecuteUpdateAsync(s => s.SetProperty(r => r.LeasedUntil, turn.Over ? null : DateTime.UtcNow + Lease), ct), requiresNew: true, cancellationToken: ct);
             }
             while (!turn.Over && !ct.IsCancellationRequested);
+
+            await working.CancelAsync();
+            await AgentRunHere.QuietAsync(renewing);
+            if (turn.Over)
+            {
+                await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.Id == id)
+                    .ExecuteUpdateAsync(s => s.SetProperty(r => r.LeasedUntil, (DateTime?)null), ct), requiresNew: true, cancellationToken: ct);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "An agent's run {Run} failed", id);
             await runner.FailAsync(id, "The run failed on the server; its steps so far are kept.", ct);
+        }
+        finally
+        {
+            await working.CancelAsync();
+            await AgentRunHere.QuietAsync(renewing);
         }
 
         return true;
@@ -180,7 +194,11 @@ public sealed class AgentTranscripts(IServiceScopeFactory scopes, IOptions<Agent
                 {
                     await using AsyncServiceScope scope = scopes.CreateAsyncScope();
                     await scope.ServiceProvider.GetRequiredService<AgentsDb>()
-                        .RunAsync(db => AgentRunService.ForgetTranscriptsAsync(db, Math.Max(1, options.Value.TranscriptDays), stoppingToken), cancellationToken: stoppingToken);
+                        .RunAsync(async db =>
+                        {
+                            await AgentRunService.ForgetTranscriptsAsync(db, Math.Max(1, options.Value.TranscriptDays), stoppingToken);
+                            await AgentRunService.ForgetChatEventsAsync(db, stoppingToken);
+                        }, cancellationToken: stoppingToken);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

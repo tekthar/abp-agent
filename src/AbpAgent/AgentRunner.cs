@@ -62,7 +62,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
 
         if (await HeldAsync(run, agent, cancellationToken) is { } held)
         {
-            await EndAsync(runId, held.State, held.Why, null, cancellationToken);
+            await EndAsync(runId, held.State, held.Why, null, cancellationToken, AgentRunErrorCodes.Held);
             return new AgentTurn(true, run.Turns);
         }
 
@@ -76,20 +76,22 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             || run.StartedAt is { } started && await WorkedAsync(run.Id, started, maxTime, cancellationToken) > maxTime)
         {
             string why = $"The run reached its limits ({maxTurns} turns, {maxCalls} tool calls, {maxTime.TotalMinutes:0} minutes) before it finished.";
-            await EndAsync(runId, AgentRunStates.Failed, why, null, cancellationToken);
+            await EndAsync(runId, AgentRunStates.Failed, why, null, cancellationToken, AgentRunErrorCodes.Limits);
             return new AgentTurn(true, run.Turns);
         }
 
         if (maxCost > 0 && run.Cost >= maxCost)
         {
-            await EndAsync(runId, AgentRunStates.Failed, $"The run reached the most it may cost ({maxCost:0.##}) before it finished.", null, cancellationToken);
+            await EndAsync(runId, AgentRunStates.Failed, $"The run reached the most it may cost ({maxCost:0.##}) before it finished.", null, cancellationToken,
+                AgentRunErrorCodes.RunCost);
             return new AgentTurn(true, run.Turns);
         }
 
         if (limits.MaxToolFailuresInRow > 0 && await FailingAsync(run.Id, limits.MaxToolFailuresInRow, cancellationToken))
         {
             await EndAsync(runId, AgentRunStates.Failed,
-                $"Its last {limits.MaxToolFailuresInRow} tool calls failed, so it stopped rather than go on trying.", null, cancellationToken);
+                $"Its last {limits.MaxToolFailuresInRow} tool calls failed, so it stopped rather than go on trying.", null, cancellationToken,
+                AgentRunErrorCodes.ToolFailures);
             return new AgentTurn(true, run.Turns);
         }
 
@@ -117,20 +119,19 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         catch (AgentModelRefusedException ex)
         {
             await FinishStepAsync(turn.Id, AgentStepOutcomes.Failed, ex.Message, cancellationToken);
-            await EndAsync(runId, AgentRunStates.Failed, $"The model didn't answer ({ex.Code}): {ex.Message}", null, cancellationToken);
+            await EndAsync(runId, AgentRunStates.Failed, $"The model didn't answer ({ex.Code}): {ex.Message}", null, cancellationToken, Code(ex.Code));
             return new AgentTurn(true, run.Turns);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            // Anything else from the host's model, or a reply that broke off: the run ends with it, and keeps no answer.
-            string why = ex is AgentModelBrokeException ? ex.Message : $"The model didn't answer: its call failed ({ex.GetType().Name}).";
-            if (ex is not AgentModelBrokeException)
-            {
-                logger.LogWarning(ex, "Agent {Agent}'s model call failed in run {Run}", agent.Key, runId);
-            }
-
+            // Anything else from the host's model, or a reply that broke off: the run ends with it, and keeps no answer. Its words
+            // are the package's, with a code: what a provider said is only logged, never shown.
+            (string why, string code) = ex is AgentModelBrokeException broke
+                ? ($"The model's reply broke off ({broke.Code}).", broke.Code)
+                : ($"The model didn't answer: its call failed ({ex.GetType().Name}).", AgentRunErrorCodes.ModelFailed);
+            logger.LogWarning(ex, "Agent {Agent}'s model call failed in run {Run}: {Why}", agent.Key, runId, ex.Message);
             await FinishStepAsync(turn.Id, AgentStepOutcomes.Failed, why, cancellationToken);
-            await EndAsync(runId, AgentRunStates.Failed, why, null, cancellationToken);
+            await EndAsync(runId, AgentRunStates.Failed, why, null, cancellationToken, code);
             return new AgentTurn(true, run.Turns);
         }
 
@@ -188,7 +189,8 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
 
             if (e.Event == "error")
             {
-                throw new AgentModelBrokeException($"The model's reply broke off: {ErrorOf(e.Data)}");
+                (string code, string said) = ErrorOf(e.Data);
+                throw new AgentModelBrokeException(code, said);
             }
 
             if (text is not null && e.Event == "content_block_delta" && e.Data.ValueKind == JsonValueKind.Object
@@ -203,15 +205,25 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             }
         }
 
-        throw new AgentModelBrokeException("The model's reply broke off before it ended.");
+        throw new AgentModelBrokeException(AgentRunErrorCodes.BrokeOff, "the stream ended before the whole reply");
     }
 
-    /// <summary>What an <c>error</c> event says, as the Messages API's carry it.</summary>
-    private static string ErrorOf(JsonElement data) =>
-        data.ValueKind == JsonValueKind.Object && data.TryGetProperty("error", out JsonElement error) && error.ValueKind == JsonValueKind.Object
-            && error.TryGetProperty("message", out JsonElement message) && message.ValueKind == JsonValueKind.String
-            ? Cut(message.GetString() ?? "", 500)
-            : "its stream ended with an error.";
+    /// <summary>
+    /// What an <c>error</c> event says, as the Messages API's carry it: its type as the run's error code (an AI gateway's
+    /// refusal code, say), and its message, for the log only.
+    /// </summary>
+    private static (string Code, string Said) ErrorOf(JsonElement data)
+    {
+        JsonElement error = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("error", out JsonElement e) && e.ValueKind == JsonValueKind.Object ? e : default;
+        string? type = error.ValueKind == JsonValueKind.Object && error.TryGetProperty("type", out JsonElement t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
+        string said = error.ValueKind == JsonValueKind.Object && error.TryGetProperty("message", out JsonElement m) && m.ValueKind == JsonValueKind.String
+            ? Cut(m.GetString() ?? "", 500) : "";
+        return (Code(type) ?? AgentRunErrorCodes.BrokeOff, said);
+    }
+
+    /// <summary>A code as it's kept: short, lowercase letters, digits, dashes and underscores; else none.</summary>
+    private static string? Code(string? code) =>
+        code is { Length: > 0 and <= AgentRunErrorCodes.MaxLength } && code.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c is '_' or '-') ? code : null;
 
     /// <summary>Text for the chat, in pieces of at most <see cref="TextPiece"/>: joined, they're the cleaned block.</summary>
     private async Task ChatTextAsync(AgentRun run, int turn, string block, CancellationToken ct)
@@ -313,20 +325,32 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     /// <summary>Ends a run the host's queue gave up on (its job failed or was cancelled), unless it has ended already.</summary>
     public async Task FailAsync(Guid runId, string why, CancellationToken cancellationToken)
     {
-        bool ended = await agentsDb.RunAsync(async db =>
+        // The run's chat, or Guid.Empty for a run of none; null when it had ended already.
+        Guid? ended = await agentsDb.RunAsync<Guid?>(async db =>
         {
             AgentRun run = await db.AgentRuns.FirstAsync(r => r.Id == runId, cancellationToken);
             if (run.Ended)
             {
-                return false;
+                return null;
             }
 
-            (run.State, run.Error, run.EndedAt) = (AgentRunStates.Failed, why, DateTime.UtcNow);
+            (run.State, run.Error, run.ErrorCode, run.EndedAt) = (AgentRunStates.Failed, why, AgentRunErrorCodes.Server, DateTime.UtcNow);
+            if (run.ChatId is { } c)
+            {
+                AgentChatEvents.Add(db, c, run.Id, AgentChatEventTypes.Run,
+                    new { run = run.Id, state = AgentRunStates.Failed, error = why, code = AgentRunErrorCodes.Server });
+            }
+
             await db.SaveChangesAsync(cancellationToken);
-            return true;
+            return run.ChatId ?? Guid.Empty;
         }, requiresNew: true, cancellationToken: cancellationToken);
-        if (ended)
+        if (ended is { } told)
         {
+            if (told != Guid.Empty)
+            {
+                signals.Pulse(told);
+            }
+
             await line.EndedAsync(runId, cancellationToken);
         }
     }
@@ -642,7 +666,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             if (run.ChatId is { } chat)
             {
                 AgentChatEvents.Add(db, chat, run.Id, AgentChatEventTypes.Question,
-                    new { run = run.Id, question = question.Id, step = step.Number, tool = step.Name, target = step.Target });
+                    new { run = run.Id, question = question.Id, id = step.Id, step = step.Number, tool = step.Name, target = step.Target });
             }
 
             await db.SaveChangesAsync(ct);
@@ -890,7 +914,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             if (chat is { } c)
             {
                 AgentChatEvents.Add(db, c, step.RunId, AgentChatEventTypes.Step,
-                    new { run = step.RunId, step = step.Number, tool = step.Name, target = step.Target, outcome = (string?)null });
+                    new { run = step.RunId, id = step.Id, step = step.Number, tool = step.Name, target = step.Target, outcome = (string?)null });
             }
 
             await db.SaveChangesAsync(ct);
@@ -914,7 +938,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         if (told is { } c)
         {
             AgentChatEvents.Add(db, c, step.RunId, AgentChatEventTypes.Step,
-                new { run = step.RunId, step = step.Number, tool = step.Name, target = step.Target, outcome });
+                new { run = step.RunId, id = step.Id, step = step.Number, tool = step.Name, target = step.Target, outcome });
         }
         if (usage is not null)
         {
@@ -949,7 +973,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             await db.SaveChangesAsync(ct);
         }, requiresNew: true, cancellationToken: ct);
 
-    private async Task EndAsync(Guid runId, string state, string? error, string? answer, CancellationToken ct)
+    private async Task EndAsync(Guid runId, string state, string? error, string? answer, CancellationToken ct, string? code = null)
     {
         Guid? chat = await agentsDb.RunAsync(async db =>
         {
@@ -957,9 +981,10 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             // Cleaned as the run's own copy is kept, as the copy it posts is: its readers see it drawn as Markdown, so an
             // image from elsewhere it was steered into writing could carry what it read out by being displayed.
             (run.State, run.Error, run.Answer, run.EndedAt) = (state, error, answer is null ? null : AgentText.Clean(Cut(answer, 20_000)), DateTime.UtcNow);
+            run.ErrorCode = state == AgentRunStates.Done ? null : code;
             if (run.ChatId is { } c)
             {
-                AgentChatEvents.Add(db, c, run.Id, AgentChatEventTypes.Run, new { run = run.Id, state, error });
+                AgentChatEvents.Add(db, c, run.Id, AgentChatEventTypes.Run, new { run = run.Id, state, error, code = run.ErrorCode });
             }
 
             await db.SaveChangesAsync(ct);
@@ -1081,5 +1106,8 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     private static string Cut(string text, int max = MaxOutput) => text.Length > max ? text[..max] : text;
 }
 
-/// <summary>A model's reply that broke off partway: the run fails with this, and keeps no answer.</summary>
-internal sealed class AgentModelBrokeException(string message) : Exception(message);
+/// <summary>A model's reply that broke off partway, with its code and what the stream said: the run fails with the code, and keeps no answer.</summary>
+internal sealed class AgentModelBrokeException(string code, string said) : Exception(said)
+{
+    public string Code { get; } = code;
+}

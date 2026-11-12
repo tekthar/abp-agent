@@ -660,6 +660,9 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         Assert.Equal(["turn", "step", "step", "turn"], events.Take(4).Select(e => e.Type));
         Assert.Equal(["get_ticket", "get_ticket"], events.Where(e => e.Type == "step").Select(e => e.Data.GetProperty("tool").GetString()));
         Assert.Equal(["done"], events.Where(e => e.Type == "step").Skip(1).Select(e => e.Data.GetProperty("outcome").GetString()));
+        // A step says which it is, never what it was given or gave back: a reader gets that through the run, as its person.
+        Assert.All(events.Where(e => e.Type == "step"), e => Assert.True(e.Data.TryGetProperty("id", out _) && !e.Data.TryGetProperty("input", out _)
+            && !e.Data.TryGetProperty("output", out _)));
         Assert.Equal("run", events[^1].Type);
         Assert.Equal("done", events[^1].Data.GetProperty("state").GetString());
 
@@ -690,6 +693,7 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         JsonElement run = await FinishedAsync(chat.GetProperty("runs")[0]);
         Assert.Equal("failed", run.GetProperty("state").GetString());
         Assert.Contains("its call failed (InvalidOperationException)", run.GetProperty("error").GetString(), StringComparison.Ordinal);
+        Assert.Equal("model_failed", run.GetProperty("errorCode").GetString());
         Assert.Equal(JsonValueKind.Null, run.GetProperty("answer").ValueKind);
 
         // Text came before the break, but the reply isn't kept: the run's end says why, and the reader sees it end.
@@ -697,11 +701,14 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         chat = await SendAsync(HttpMethod.Post, "/api/agent-chats", Ben, new { agentId = breaker, desk = "DESK", prompt = "Go" });
         run = await FinishedAsync(chat.GetProperty("runs")[0]);
         Assert.Equal("failed", run.GetProperty("state").GetString());
-        Assert.Equal("The model's reply broke off: The sample's model was cut off.", run.GetProperty("error").GetString());
+        // In the package's words with the stream's own code: what the provider said is only logged.
+        Assert.Equal("The model's reply broke off (overloaded_error).", run.GetProperty("error").GetString());
+        Assert.Equal("overloaded_error", run.GetProperty("errorCode").GetString());
         Assert.Equal(JsonValueKind.Null, run.GetProperty("answer").ValueKind);
         List<(long Id, string Type, JsonElement Data)> events = await ChatEventsAsync(chat.GetProperty("chat").GetProperty("id").GetString()!, Ben);
         Assert.Equal("failed", events[^1].Data.GetProperty("state").GetString());
         Assert.Equal(run.GetProperty("error").GetString(), events[^1].Data.GetProperty("error").GetString());
+        Assert.Equal("overloaded_error", events[^1].Data.GetProperty("code").GetString());
     }
 
     [Fact]

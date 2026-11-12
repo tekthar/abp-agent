@@ -37,6 +37,9 @@ public sealed record AgentRunInfo(
     /// <summary>The chat it answers a message in, if any.</summary>
     public Guid? ChatId { get; init; }
 
+    /// <summary>What kind of error ended it (<see cref="AgentRun.ErrorCode"/>): null when it didn't fail.</summary>
+    public string? ErrorCode { get; init; }
+
     /// <summary>When its person posted its reply on the chat's item.</summary>
     public DateTime? PostedAt { get; init; }
 }
@@ -334,6 +337,7 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
                     x.StartedAt, x.EndedAt) { Allowed = x.Allowed, Writes = x.Writes })]
                 : [])
         {
+            ErrorCode = run.ErrorCode,
             Question = question is null || !(seesSteps || question.AskedOf == actor.Id) ? null
                 : Info(question, run, agent, item?.Key, people, actor, transcript || question.AskedOf == actor.Id, steps.FirstOrDefault(s => s.Id == question.StepId)?.Output,
                     await MayAlwaysAsync(actor, question, run, agent, await OwnToolsAsync(ct), ct)),
@@ -570,6 +574,16 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
 
         await db.AgentRunSteps.Where(s => gone.Contains(s.RunId)).ExecuteUpdateAsync(s => s.SetProperty(x => x.Input, (string?)null).SetProperty(x => x.Output, (string?)null), ct);
         await db.AgentRuns.Where(r => gone.Contains(r.Id)).ExecuteUpdateAsync(s => s.SetProperty(r => r.Conversation, (string?)null).SetProperty(r => r.TranscriptGone, true), ct);
+    }
+
+    /// <summary>
+    /// Chats' events past what they're kept for (<see cref="AgentChatEvents.Kept"/>, a day, never longer than a transcript):
+    /// with the transcripts' sweep, so they go even when no chat runs again.
+    /// </summary>
+    internal static Task ForgetChatEventsAsync(IAgentsDbContext db, CancellationToken ct)
+    {
+        DateTime old = DateTime.UtcNow - AgentChatEvents.Kept;
+        return db.AgentChatEvents.Where(e => e.CreatedAt < old).ExecuteDeleteAsync(ct);
     }
 
     private async Task<AgentItemRef?> ItemAsync(AgentRun run, CancellationToken ct) =>

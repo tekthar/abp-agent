@@ -7,7 +7,7 @@ All notable changes to AbpAgent are written here. The format follows
 ## [Unreleased]
 
 Live chats (A1). What a host changes: map the new table (`IAgentsDbContext.AgentChatEvents`, `agents.agent_chat_events`)
-and add a migration; serve `AgentChatService.EventsAsync` as server-sent events (see docs/hosting.md, "Live chats");
+and the new column (`agent_runs.ErrorCode`) and add a migration; serve `AgentChatService.EventsAsync` as server-sent events (see docs/hosting.md, "Live chats");
 optionally stream from your model with `IAgentModels.StreamAsync`.
 
 ### Added
@@ -24,12 +24,20 @@ optionally stream from your model with `IAgentModels.StreamAsync`.
   `AgentsOptions.ChatRunsStartHere`, on by default), holding its lease; a run whose lease ran out with no job goes back
   to the queue (`AgentRunLine.QueueWaitingAsync`).
 - `AgentsOptions.ChatEventsPoll` (half a second) and `ChatEventsMost` (ten minutes).
+- `AgentRun.ErrorCode` and `AgentRunInfo.ErrorCode`: what kind of error ended a run, for a host to say in its people's
+  language (`AgentRunErrorCodes`: `model_failed`, `broke_off`, `limits`, `run_cost`, `tool_failures`, `held`, `server`;
+  or the host model's own refusal code, or the code a stream's `error` event gave as its `type`). A chat's `run` event
+  carries it as `code`; its `step` and `question` events carry the step's `id`, never its input or output.
 
 ### Changed
 
 - Any exception from the host's model, not only `AgentModelRefusedException`, ends the run Failed with "The model
-  didn't answer: its call failed (…)", and a stream that breaks off ends it with "The model's reply broke off: …"; neither
-  keeps an answer. A server stopping still leaves the run to be taken over.
+  didn't answer: its call failed (…)", and a stream that breaks off ends it with "The model's reply broke off (code)."; the
+  provider's own words are only logged, and neither keeps an answer. A server stopping still leaves the run to be taken
+  over.
+- The package's worker renews a run's lease while it works it, not only between turns, so one long turn on a site with
+  several servers isn't taken over by another midway.
+- Chats' events past a day go with the transcripts' sweep too, so they never outlive a run's transcript.
 
 ### Fixed
 

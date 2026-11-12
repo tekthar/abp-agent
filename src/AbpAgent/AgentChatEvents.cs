@@ -7,6 +7,38 @@ using Volo.Abp.Domain.Entities;
 
 namespace AbpAgent;
 
+/// <summary>
+/// The kinds of error that end a run, as <see cref="AgentRun.ErrorCode"/> has them, for a host to say in its own words. A
+/// refusal from the host's model keeps the model's own code (<see cref="AgentModelRefusedException.Code"/>, an AI gateway's
+/// "timeout", "over_limit"…), and a reply that broke off the code its <c>error</c> event gave, when it gave one.
+/// </summary>
+public static class AgentRunErrorCodes
+{
+    /// <summary>The longest code kept.</summary>
+    public const int MaxLength = 40;
+
+    /// <summary>The host's model threw something other than a refusal.</summary>
+    public const string ModelFailed = "model_failed";
+
+    /// <summary>The model's reply broke off before it ended, with no code of its own.</summary>
+    public const string BrokeOff = "broke_off";
+
+    /// <summary>The run reached its turns, tool calls or minutes.</summary>
+    public const string Limits = "limits";
+
+    /// <summary>The run reached the most it may cost.</summary>
+    public const string RunCost = "run_cost";
+
+    /// <summary>Its tool calls failed too many times in a row.</summary>
+    public const string ToolFailures = "tool_failures";
+
+    /// <summary>Agents were switched off, the agent paused, or safe mode held it.</summary>
+    public const string Held = "held";
+
+    /// <summary>The server or the host's queue gave up on it.</summary>
+    public const string Server = "server";
+}
+
 /// <summary>What a chat's events say happened: a model turn began, text it wrote, a step, a question, the run's end, or a keep-alive.</summary>
 public static class AgentChatEventTypes
 {

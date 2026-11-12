@@ -95,6 +95,7 @@ public static class AgentsModel
 
         builder.Entity<AgentRun>(b =>
         {
+            b.Property(x => x.ErrorCode).HasMaxLength(AgentRunErrorCodes.MaxLength);
             b.ToTable("agent_runs", Schema);
             b.Property(x => x.Id).ValueGeneratedNever();
             b.Property(x => x.ItemKind).HasMaxLength(ItemKindLength);

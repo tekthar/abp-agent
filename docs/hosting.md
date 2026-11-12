@@ -83,7 +83,8 @@ no rule acts on what someone asked in private.
 - **You serve its events**: `AgentChatService.EventsAsync(actor, chatId, after, ct)` checks the chat is the actor's
   (not found otherwise) and gives its events in order while a run of it goes: `turn` (a model turn began), `text` (a
   Markdown block of the reply, cleaned before it's sent, to append to its turn's text), `step` (a tool call started,
-  `outcome` null, and finished), `question` (the run asks its person), `run` (it ended: `state`, `error`), and `ping`
+  `outcome` null, and finished, with the step's `id` and never its input or output), `question` (the run asks its
+  person), `run` (it ended: `state`, `error`, and `code`, the run's `ErrorCode`), and `ping`
   when nothing has come for a while. Serve it as server-sent events with each event's `Id` as its id, and take
   `Last-Event-ID` as `after`: a reader that drops comes back and gets what it missed. The stream ends once the run's
   end is given, or after `AgentsOptions.ChatEventsMost`. The sample host's `agent-chats/{id}/events` route is the whole
