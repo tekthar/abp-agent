@@ -1012,7 +1012,9 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
 
     /// <summary>What the run does now: the run's rights, the agent's name, its change set.</summary>
     private static AgentActing Acting(AgentRun run, Agent agent, bool readOnly) =>
-        new(run.Id, run.ChangeSetId, agent.AccountId, run.ActorId, readOnly) { Chain = run.Chain, AgentId = agent.Id, ScopeId = run.ScopeId, StartedBy = run.StartedBy };
+        new(run.Id, run.ChangeSetId, agent.AccountId, run.ActorId, readOnly) {
+            Chain = run.Chain, AgentId = agent.Id, ScopeId = run.ScopeId, StartedBy = run.StartedBy, ChatId = run.ChatId,
+        };
 
     /// <summary>Who the agent is, its instructions, where its work goes (in a chat, to its person), and that what it reads is data.</summary>
     private string Persona(Agent agent, string noun, bool chat = false)

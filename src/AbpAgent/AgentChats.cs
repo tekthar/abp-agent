@@ -214,7 +214,7 @@ public sealed class AgentChatService(AgentsDb agentsDb, AgentService agents, Age
         {
             AgentActing acting = new(run.Id, run.ChangeSetId, agent.AccountId, run.ActorId, false)
             {
-                Chain = run.Chain, AgentId = agent.Id, ScopeId = run.ScopeId, StartedBy = run.StartedBy,
+                Chain = run.Chain, AgentId = agent.Id, ScopeId = run.ScopeId, StartedBy = run.StartedBy, ChatId = run.ChatId,
             };
             using (AgentActs.Begin(acting, actingScope))
             {

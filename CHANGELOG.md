@@ -6,6 +6,20 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+Browsing an agent's graph. Nothing for a host to migrate.
+
+### Added
+
+- `AgentMemoryService.GraphAsync`: an agent's graph in one scope for its admins, to browse with no model calls. It gives
+  the things (those whose names or facts have the words, when given; most connected first, at most 200), and around one
+  thing its facts, the things they reach, and the notes they came from (`AgentGraphPage`, `AgentGraphView`,
+  `AgentGraphThing`, `AgentGraphLink`, `AgentGraphNote`), and how many of the scope's notes aren't in the graph yet. It
+  follows recall's rule: a fact shows only when the reader may read every note it came from; a thing, when a note they may
+  read names it, with its summary only when they may read every note that names it; facts left out are counted.
+- `IAgentMemoryGraph.LookAsync` and `IAgentMemoryGraph.Why`, with defaults, so another graph implementation still builds;
+  `AgentGraph` (AbpAgent.Graphiti) reads its tables for them.
+- `AgentActing.ChatId`: the chat a run answers in, for a tool that keeps something between a chat's turns.
+
 ## [0.4.0] - 2026-11-13
 
 Graph memory. What a host changes: a migration for four new `agent_memories` columns (`GraphedAt`, `GraphEpisode`,

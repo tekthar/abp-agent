@@ -914,6 +914,39 @@ public sealed class AgentsAloneTests : IAsyncLifetime
                 && f.GetProperty("from").EnumerateArray().Any(id => id.GetString() == note.Id.ToString()));
         }
 
+        // Its admins browse the graph with no model calls: the things whose facts have the words, and around one, its fact
+        // with the note it came from and the thing at its other end.
+        using (IServiceScope scope = _factory.Services.CreateScope())
+        {
+            AgentMemoryService memories = scope.ServiceProvider.GetRequiredService<AgentMemoryService>();
+            AgentActor admin = new(Guid.Parse(Admin));
+            AgentGraphPage found = await memories.GraphAsync(admin, Guid.Parse(agent), "DESK", "toner", null, CancellationToken.None);
+            Assert.True(found.On, found.Why);
+            Assert.Equal(0, found.Waiting);
+            AgentGraphThing northwind = Assert.Single(found.View.Things, t => t.Name == "Northwind");
+            Assert.Contains(found.View.Things, t => t.Name == ticket);
+            Assert.Empty((await memories.GraphAsync(admin, Guid.Parse(agent), "DESK", "nothing like it", null, CancellationToken.None)).View.Things);
+
+            AgentGraphPage around = await memories.GraphAsync(admin, Guid.Parse(agent), "DESK", null, northwind.Id, CancellationToken.None);
+            Assert.Equal(northwind.Id, around.View.Thing?.Id);
+            AgentGraphLink fact = Assert.Single(around.View.Facts);
+            Assert.Contains("Acme toner", fact.Fact, StringComparison.Ordinal);
+            Assert.Equal("RELATES_TO", fact.Relation);
+            Assert.Equal([note.Id], fact.Memories);
+            Assert.Null(fact.InvalidAt);
+            Assert.Equal(note.Id, Assert.Single(around.Notes).Id);
+            Assert.Equal(ticket, Assert.Single(around.View.Around).Name);
+            Assert.Equal(0, around.View.Hidden);
+
+            // A reader who may read none of its notes sees nothing of it; and only the agent's admins may look.
+            AgentGraphView none = await graph.LookAsync(new AgentGraphLook(Guid.Parse(agent), note.ScopeId, null, northwind.Id, 10,
+                (_, _) => ValueTask.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid>())), CancellationToken.None);
+            Assert.Empty(none.Things);
+            Assert.Null(none.Thing);
+            await Assert.ThrowsAsync<Volo.Abp.UserFriendlyException>(() => memories.GraphAsync(new AgentActor(Guid.Parse(Cy)), Guid.Parse(agent), "DESK", null, null,
+                CancellationToken.None));
+        }
+
         // Forgotten, the note's facts are gone from recall at once, and the sweep lets its episode go.
         await SendAsync(HttpMethod.Put, $"/api/agents/{agent}", Admin, new { instructions = $$"""
             demo: forget {"id":"{{note.Id}}"}

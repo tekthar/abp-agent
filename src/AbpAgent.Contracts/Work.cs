@@ -101,6 +101,9 @@ public sealed record AgentActing(Guid RunId, Guid ChangeSetId, Guid AgentAccount
 
     /// <summary>The person who started the run, or null when the system did: a tool that uses a person's own sign-in uses theirs.</summary>
     public Guid? StartedBy { get; init; }
+
+    /// <summary>The chat the run answers in, when it's a chat's: a tool that keeps something between turns keys it on this.</summary>
+    public Guid? ChatId { get; init; }
 }
 
 /// <summary>

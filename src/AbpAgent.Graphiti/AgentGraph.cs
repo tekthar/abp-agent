@@ -103,6 +103,94 @@ public sealed class AgentGraph(IServiceScopeFactory scopes, IOptions<AgentGraphO
     }
 
     /// <summary>
+    /// The graph as a reader may see it, to browse: only its tables, no model calls. A fact shows when the reader may read
+    /// every note it came from; a thing, when a note they may read names it, with its summary only when they may read every
+    /// note that names it. Facts a later note replaced show too, with when they stopped. A graph is one agent's notes in one
+    /// scope (at most a few hundred), so it's read whole.
+    /// </summary>
+    public async Task<AgentGraphView> LookAsync(AgentGraphLook look, CancellationToken cancellationToken)
+    {
+        if (_connection is null)
+        {
+            return AgentGraphView.Empty;
+        }
+
+        string group = Group(look.AgentId, look.ScopeId);
+        await using GraphitiDbContext db = Context();
+        List<string> episodes = await db.Episodes.AsNoTracking().Where(e => e.GroupId == group).Select(e => e.Uuid).ToListAsync(cancellationToken);
+        Dictionary<string, Guid> notes = await NotesAsync(episodes, cancellationToken);
+        IReadOnlySet<Guid> may = notes.Count == 0 ? new HashSet<Guid>() : await look.Readable([.. notes.Values.Distinct()], cancellationToken);
+        HashSet<string> readable = [.. notes.Where(n => may.Contains(n.Value)).Select(n => n.Key)];
+        if (readable.Count == 0)
+        {
+            return AgentGraphView.Empty;
+        }
+
+        var mentions = await db.EpisodicEdges.AsNoTracking().Where(e => e.GroupId == group).Select(e => new { Episode = e.SourceNodeUuid, Thing = e.TargetNodeUuid })
+            .ToListAsync(cancellationToken);
+        var entities = await db.Entities.AsNoTracking().Where(e => e.GroupId == group).Select(e => new { e.Uuid, e.Name, e.Summary, e.CreatedAt })
+            .ToListAsync(cancellationToken);
+        var edges = await db.EntityEdges.AsNoTracking().Where(e => e.GroupId == group)
+            .Select(e => new { e.Uuid, e.SourceNodeUuid, e.TargetNodeUuid, e.Name, e.Fact, e.Episodes, e.ValidAt, e.InvalidAt, e.ExpiredAt, e.CreatedAt })
+            .ToListAsync(cancellationToken);
+
+        // A thing is seen when a readable note names it, and its summary only when every note that names it is readable.
+        Dictionary<string, (bool Some, bool All)> named = [];
+        foreach (var m in mentions)
+        {
+            bool mine = readable.Contains(m.Episode);
+            (bool some, bool all) = named.GetValueOrDefault(m.Thing, (false, true));
+            named[m.Thing] = (some || mine, all && mine);
+        }
+
+        var shown = edges.Where(e => e.Episodes.Count > 0 && e.Episodes.All(readable.Contains)).ToList();
+        Dictionary<string, int> facts = [];
+        foreach (var e in shown)
+        {
+            facts[e.SourceNodeUuid] = facts.GetValueOrDefault(e.SourceNodeUuid) + 1;
+            if (e.TargetNodeUuid != e.SourceNodeUuid)
+            {
+                facts[e.TargetNodeUuid] = facts.GetValueOrDefault(e.TargetNodeUuid) + 1;
+            }
+        }
+
+        Dictionary<string, AgentGraphThing> seen = entities.Where(e => named.TryGetValue(e.Uuid, out var n) && n.Some)
+            .ToDictionary(e => e.Uuid, e => new AgentGraphThing(e.Uuid, e.Name, named[e.Uuid].All && e.Summary is { Length: > 0 } ? e.Summary : null,
+                facts.GetValueOrDefault(e.Uuid), Offset(e.CreatedAt)));
+
+        IEnumerable<AgentGraphThing> things = seen.Values;
+        if (look.Find is { Length: > 0 } find)
+        {
+            HashSet<string> inFacts = [.. shown.Where(e => e.Fact.Contains(find, StringComparison.OrdinalIgnoreCase)).SelectMany(e => new[] { e.SourceNodeUuid, e.TargetNodeUuid })];
+            things = things.Where(t => t.Name.Contains(find, StringComparison.OrdinalIgnoreCase) || inFacts.Contains(t.Id));
+        }
+
+        List<AgentGraphThing> list = [.. things.OrderByDescending(t => t.Facts).ThenByDescending(t => t.CreatedAt).ThenBy(t => t.Name, StringComparer.Ordinal)
+            .Take(Math.Max(1, look.Take))];
+        if (look.Thing is not { Length: > 0 } id || !seen.TryGetValue(id, out AgentGraphThing? thing))
+        {
+            return new AgentGraphView(list, null, [], [], 0);
+        }
+
+        var touching = edges.Where(e => e.SourceNodeUuid == id || e.TargetNodeUuid == id).ToList();
+        List<AgentGraphLink> links = [.. shown.Where(e => e.SourceNodeUuid == id || e.TargetNodeUuid == id)
+            .OrderBy(e => e.InvalidAt is not null || e.ExpiredAt is not null).ThenByDescending(e => e.ValidAt ?? e.CreatedAt)
+            .Select(e => new AgentGraphLink(e.Uuid, e.SourceNodeUuid, e.TargetNodeUuid, e.Name, e.Fact, [.. e.Episodes.Select(notes.GetValueOrDefault).Where(n => n != Guid.Empty).Distinct()],
+                Offset(e.ValidAt), Offset(e.InvalidAt ?? e.ExpiredAt), Offset(e.CreatedAt)))];
+        List<AgentGraphThing> around = [.. links.Select(l => l.From == id ? l.To : l.From).Where(o => o != id).Distinct()
+            .Select(o => seen.GetValueOrDefault(o)).OfType<AgentGraphThing>()];
+        return new AgentGraphView(list, thing, links, around, touching.Count - links.Count);
+    }
+
+    private static DateTimeOffset Offset(DateTime at) => new(DateTime.SpecifyKind(at, DateTimeKind.Utc));
+
+    private static DateTimeOffset? Offset(DateTime? at) => at is { } a ? Offset(a) : null;
+
+    private static DateTimeOffset Offset(DateTimeOffset at) => at;
+
+    private static DateTimeOffset? Offset(DateTimeOffset? at) => at;
+
+    /// <summary>
     /// Reads a note into its agent's graph in its scope, as the agent (who pays): its episode's id. A note an earlier try saved
     /// but couldn't finish is taken up again, not saved twice.
     /// </summary>

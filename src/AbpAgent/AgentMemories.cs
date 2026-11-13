@@ -14,6 +14,15 @@ namespace AbpAgent;
 public sealed record AgentMemoryInfo(Guid Id, string? ScopeKey, string ItemKind, string? ItemKey, string Text, bool Outside, AgentPerson? RememberedBy, Guid RunId,
     DateTime CreatedAt, DateTime LastUsedAt, int Uses);
 
+/// <summary>A note as the graph's page shows it beside a fact: what it says, about which item, and when it was kept.</summary>
+public sealed record AgentGraphNote(Guid Id, string ItemKind, string ItemKey, string Text, bool Outside, DateTime CreatedAt);
+
+/// <summary>
+/// An agent's graph in a scope for its admins: whether the host has it (and why not), what a look found, the notes behind
+/// the facts shown, and how many of the scope's notes aren't in the graph yet.
+/// </summary>
+public sealed record AgentGraphPage(bool On, string? Why, AgentGraphView View, IReadOnlyList<AgentGraphNote> Notes, int Waiting);
+
 /// <summary>
 /// What agents learned about items. A run keeps a memory about an item in its scope (<c>remember</c>), finds
 /// the best ones for a query, near an item and the items linked to it (<c>recall</c>), lets one go (<c>forget</c>), and
@@ -272,6 +281,48 @@ public sealed class AgentMemoryService(AgentsDb agentsDb, AgentService agents, I
         return [.. readable.Select(r => new AgentMemoryInfo(r.Memory.Id, where.GetValueOrDefault(r.Memory.ScopeId)?.Key, r.Memory.ItemKind, r.Key, r.Memory.Text,
             r.Memory.Outside, r.Memory.RememberedBy is { } by ? people.GetValueOrDefault(by) : null, r.Memory.RunId, r.Memory.CreatedAt, r.Memory.LastUsedAt,
             r.Memory.Uses))];
+    }
+
+    /// <summary>At most this many things in a look at an agent's graph.</summary>
+    public const int ThingsShown = 200;
+
+    /// <summary>
+    /// The agent's graph in one scope for its admins, to browse: its things (those whose names or facts have the words, when
+    /// given), and around one thing its facts, with the notes they came from. Only what comes from notes the reader may
+    /// read shows (<see cref="AgentGraphLook"/>). No model calls.
+    /// </summary>
+    public async Task<AgentGraphPage> GraphAsync(AgentActor actor, Guid agentId, string scopeKey, string? find, string? thing, CancellationToken ct)
+    {
+        await AdministeredAsync(actor, agentId, ct);
+        Guid scopeId = (await scopes.FindManyAsync([scopeKey], ct)).GetValueOrDefault(scopeKey)?.Id
+            ?? throw new Volo.Abp.Domain.Entities.EntityNotFoundException($"There's no {scopeKey}.");
+        int waiting = await agentsDb.RunAsync(db => db.AgentMemories.CountAsync(m => m.AgentId == agentId && m.ScopeId == scopeId && m.GraphedAt == null, ct),
+            cancellationToken: ct);
+        IAgentMemoryGraph? graph = services.GetService<IAgentMemoryGraph>();
+        if (graph is not { Ready: true })
+        {
+            return new AgentGraphPage(false, graph?.Why ?? "This host has no graph memory.", AgentGraphView.Empty, [], waiting);
+        }
+
+        Dictionary<Guid, (AgentMemory Memory, string Key)> readable = [];
+        async ValueTask<IReadOnlySet<Guid>> ReadableAsync(IReadOnlyCollection<Guid> ids, CancellationToken token)
+        {
+            List<Guid> list = [.. ids];
+            List<AgentMemory> memories = await agentsDb.RunAsync(db => db.AgentMemories.AsNoTracking()
+                .Where(m => m.AgentId == agentId && m.ScopeId == scopeId && list.Contains(m.Id)).ToListAsync(token), cancellationToken: token);
+            foreach ((AgentMemory Memory, string Key) r in await ReadableOnlyAsync(actor.Id, memories, int.MaxValue, token, actor))
+            {
+                readable[r.Memory.Id] = r;
+            }
+
+            return readable.Keys.ToHashSet();
+        }
+
+        AgentGraphView view = await graph.LookAsync(new AgentGraphLook(agentId, scopeId, find?.Trim(), thing, ThingsShown, ReadableAsync), ct);
+        List<AgentGraphNote> notes = [.. view.Facts.SelectMany(f => f.Memories).Distinct().Where(readable.ContainsKey).Select(id => readable[id])
+            .OrderByDescending(r => r.Memory.CreatedAt)
+            .Select(r => new AgentGraphNote(r.Memory.Id, r.Memory.ItemKind, r.Key, r.Memory.Text, r.Memory.Outside, r.Memory.CreatedAt))];
+        return new AgentGraphPage(true, null, view, notes, waiting);
     }
 
     /// <summary>Lets one of the agent's memories go, for its admins who may read its item.</summary>
