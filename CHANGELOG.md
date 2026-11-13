@@ -6,6 +6,8 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-13
+
 Graph memory. What a host changes: a migration for four new `agent_memories` columns (`GraphedAt`, `GraphEpisode`,
 `GraphFailures`, `GraphLeasedUntil`); to have the graph, depend on `AbpAgentGraphitiModule` (package `AbpAgent.Graphiti`),
 give `IAgentEmbeddings`, and run PostgreSQL with pgvector. Without it, nothing changes.
