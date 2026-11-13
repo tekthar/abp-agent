@@ -510,13 +510,19 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     private static int Reminders(JsonArray messages) =>
         messages.Count(m => (string?)m?["role"] == "user" && m?["content"] is JsonValue v && v.TryGetValue(out string? text) && text.StartsWith(StepNeeds, StringComparison.Ordinal));
 
+    /// <summary>
+    /// Whether the agent keeps memories here: its memory is on, and the host has items to keep them about. A host with no
+    /// item kinds gets no remember, recall or forget, which could only fail.
+    /// </summary>
+    private bool Remembers(Agent agent) => agent.Memory && Kinds().Count > 0;
+
     /// <summary>The host's tools the agent may use (not off in its settings), and finish_step when the run was given exits.</summary>
     private async Task<List<AgentTool>> OfferedAsync(AgentRun run, Agent agent, CancellationToken ct)
     {
         // A tool the settings name is offered unless it's off; one they don't, unless it's offered only when named.
         List<AgentTool> offered = [.. (await tools.ListAsync(new AgentToolsFor(agent.Id, run.ScopeId, run.StartedBy), ct))
             .Where(t => agent.Tools.TryGetValue(t.Name, out string? setting) ? setting != AgentToolSettings.Off : !t.OptIn)];
-        if (agent.Memory)
+        if (Remembers(agent))
         {
             offered.AddRange(AgentMemoryService.Tools(ScopeItemNoun(run)));
         }
@@ -580,7 +586,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         }
 
         // Its memory: the package's own, about items its person may read.
-        if (tool is { Name: AgentMemoryService.Remember or AgentMemoryService.Recall or AgentMemoryService.Forget } && agent.Memory)
+        if (tool is { Name: AgentMemoryService.Remember or AgentMemoryService.Recall or AgentMemoryService.Forget } && Remembers(agent))
         {
             AgentMemoryService.Said said = tool.Name switch
             {
@@ -1023,7 +1029,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         string title = agent.Titles.GetValueOrDefault("en") ?? agent.Titles.Values.FirstOrDefault() ?? "";
         return $"You are {name}{(title.Length > 0 ? $", {title}," : "")} an agent working in {options.Value.ProductName} for the person who asked, with their rights and under your own name.\n\n"
             + agent.Instructions + "\n\n" + (chat ? InAChat(noun) : WhereWorkGoes(noun)) + "\n\n"
-            + (agent.Memory ? AgentMemoryService.InPersona(noun, true) + "\n\n" : "") + DataNotInstructions(noun);
+            + (Remembers(agent) ? AgentMemoryService.InPersona(noun, true) + "\n\n" : "") + DataNotInstructions(noun);
     }
 
     /// <summary>

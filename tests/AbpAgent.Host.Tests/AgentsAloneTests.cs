@@ -2,8 +2,10 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 
 namespace AbpAgent.Host.Tests;
@@ -127,6 +129,21 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         Assert.True(Tools(waiting) is ["set_priority:asked"], waiting.ToString());
         Assert.True(waiting.GetProperty("wide").GetBoolean());
         Assert.NotEqual("high", (await SendAsync(HttpMethod.Get, $"/api/tickets/{elsewhere}", Ben)).GetProperty("priority").GetString());
+    }
+
+    [Fact]
+    public async Task A_host_with_no_item_kinds_offers_no_memory_tools()
+    {
+        // Memories are kept about items: a host that has no item kinds gets no remember, recall or forget, even with the
+        // agent's memory on, so a model never tries one that could only fail.
+        _factory = _root!.WithWebHostBuilder(host => host.ConfigureTestServices(services => services.RemoveAll<IAgentItemKind>()));
+        string agent = await SetUpAgentAsync("forgetful", """
+            demo: remember {"text":"Nothing to keep it about."}
+            demo-answer: Done.
+            """);
+        JsonElement chat = await SendAsync(HttpMethod.Post, "/api/agent-chats", Ben, new { agentId = agent, desk = "DESK", prompt = "Keep it" });
+        JsonElement run = await FinishedAsync(chat.GetProperty("runs")[0]);
+        Assert.True(Tools(run) is ["remember:refused"], run.ToString());
     }
 
     [Fact]

@@ -6,6 +6,14 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-13
+
+### Fixed
+
+- A host with no item kinds (no `IAgentItemKind`) offered an agent with its memory on `remember`, `recall` and
+  `forget`, and told it about memory in its persona, though every note needs an item and each call could only fail.
+  Memory's tools and words are now offered only when the host has item kinds (found by Insight).
+
 ## [0.5.1] - 2026-11-13
 
 ### Fixed
