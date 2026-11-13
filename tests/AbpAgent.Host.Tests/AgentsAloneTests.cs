@@ -884,6 +884,78 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         Assert.True(Tools(asked) is ["recall:done", "set_priority:asked"], asked.ToString());
     }
 
+    [Fact]
+    public async Task An_agents_notes_become_a_graph_that_recall_searches_and_a_forgotten_note_leaves_it()
+    {
+        // Graph memory (AbpAgent.Graphiti): the note is read into the agent's graph after its run, by the sample model's rules.
+        AbpAgent.Graphiti.AgentGraph graph = _factory!.Services.GetRequiredService<AbpAgent.Graphiti.AgentGraph>();
+        string agent = await SetUpAgentAsync("grapher", """
+            demo: remember {"text":"$ticket needs Acme toner from Northwind."}
+            demo-answer: Kept.
+            """);
+        string ticket = await TicketAsync(Ben, "DESK", "Toner");
+        JsonElement first = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Note it" }));
+        Assert.Equal(["remember:done"], Tools(first));
+        AgentMemory note = await GraphedAsync(Guid.Parse(agent));
+        Assert.True(graph.Ready, graph.Why);
+        Assert.NotNull(note.GraphEpisode);
+
+        // Recall finds the fact the graph made of it, with the note it came from.
+        await SendAsync(HttpMethod.Put, $"/api/agents/{agent}", Admin, new { instructions = """
+            demo: recall {"query":"Acme toner"}
+            demo-answer: Recalled.
+            """ });
+        JsonElement second = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Cy, new { agentId = agent, prompt = "Look" }));
+        string recalled = ToolSteps(await SendAsync(HttpMethod.Get, $"/api/agent-runs/{second.GetProperty("id").GetString()}", Cy))[0].GetProperty("output").GetString()!;
+        using (JsonDocument said = JsonDocument.Parse(recalled))
+        {
+            JsonElement[] facts = [.. said.RootElement.GetProperty("facts").EnumerateArray()];
+            Assert.Contains(facts, f => f.GetProperty("fact").GetString()!.Contains("Acme toner", StringComparison.Ordinal)
+                && f.GetProperty("from").EnumerateArray().Any(id => id.GetString() == note.Id.ToString()));
+        }
+
+        // Forgotten, the note's facts are gone from recall at once, and the sweep lets its episode go.
+        await SendAsync(HttpMethod.Put, $"/api/agents/{agent}", Admin, new { instructions = $$"""
+            demo: forget {"id":"{{note.Id}}"}
+            demo: recall {"query":"Acme toner"}
+            demo-answer: Forgot.
+            """ });
+        JsonElement third = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Forget it" }));
+        Assert.Equal(["forget:done", "recall:done"], Tools(third));
+        string after = ToolSteps(await SendAsync(HttpMethod.Get, $"/api/agent-runs/{third.GetProperty("id").GetString()}", Ben))[1].GetProperty("output").GetString()!;
+        using (JsonDocument said = JsonDocument.Parse(after))
+        {
+            Assert.Empty(said.RootElement.GetProperty("facts").EnumerateArray());
+        }
+
+        AbpAgent.Graphiti.AgentGraphWorker worker = _factory.Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+            .OfType<AbpAgent.Graphiti.AgentGraphWorker>().Single();
+        await worker.SweepAsync(CancellationToken.None);
+        await using GraphitiNet.Driver.PostgreSql.GraphitiDbContext gdb = new(Server.Contains("Database=", StringComparison.Ordinal) ? Server : $"{Server};Database={_database}",
+            graph.GraphOptions);
+        Assert.False(await gdb.Episodes.AnyAsync(e => e.Uuid == note.GraphEpisode));
+    }
+
+    /// <summary>The agent's first note, once the worker has read it into the graph.</summary>
+    private async Task<AgentMemory> GraphedAsync(Guid agentId)
+    {
+        for (int i = 0; i < 150; i++)
+        {
+            using IServiceScope scope = _factory!.Services.CreateScope();
+            List<AgentMemory> notes = await scope.ServiceProvider.GetRequiredService<AgentsDb>().RunAsync(db => db.AgentMemories.AsNoTracking()
+                .Where(m => m.AgentId == agentId).ToListAsync());
+            if (notes is [{ GraphedAt: not null } note])
+            {
+                return note;
+            }
+
+            Assert.True(notes is not [{ GraphFailures: >= 5 }], "The note couldn't be read into the graph.");
+            await Task.Delay(200);
+        }
+
+        throw new TimeoutException("The note wasn't read into the graph.");
+    }
+
     private static List<JsonElement> ToolSteps(JsonElement run) =>
         [.. run.GetProperty("steps").EnumerateArray().Where(s => s.GetProperty("kind").GetString() == "tool")];
 

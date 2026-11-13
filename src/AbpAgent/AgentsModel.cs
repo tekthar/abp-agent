@@ -128,6 +128,9 @@ public static class AgentsModel
             b.Property(x => x.Id).ValueGeneratedNever();
             b.Property(x => x.ItemKind).HasMaxLength(ItemKindLength).IsRequired();
             b.Property(x => x.Text).HasMaxLength(AgentMemory.MaxText).IsRequired();
+            b.Property(x => x.GraphEpisode).HasMaxLength(64);
+            b.HasIndex(x => x.GraphedAt);
+            b.HasIndex(x => x.GraphEpisode);
             b.HasIndex(x => new { x.AgentId, x.ScopeId, x.LastUsedAt });
             b.HasIndex(x => new { x.ItemKind, x.ItemId });
             b.HasIndex(x => x.RememberedBy);

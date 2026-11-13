@@ -62,6 +62,18 @@ answer `IAgentItemKind.NeighboursAsync` with the items linked to one, as the act
 them too. Your host maps `agents.agent_memories` (`IAgentsDbContext.AgentMemories`); on erasing a person, call
 `AgentMemoryService.ForgetPersonAsync`.
 
+**Graph memory.** With the `AbpAgent.Graphiti` package (depend on `AbpAgentGraphitiModule`), each note an agent keeps
+is read after its run into a graph of the things it names and the facts between them (graphiti-net, on your PostgreSQL
+with the pgvector extension), one graph per agent per scope; recall gives the matching facts beside the notes, each with
+the notes it came from, and only when the run's person may read every one of them now. You give `IAgentEmbeddings` (your
+AI gateway's embeddings, with its aliases and limits) beside `IAgentModels`; the graph's model calls go through
+`IAgentModels` as the agent's account, their purpose `agent:{key}:memory:{prompt}` (a demo model can answer them by
+rule, as the sample host's does). The graph's tables are made at start in schema `agents_graph`; without pgvector, or
+on a read-only replica, the graph stays off and agents keep their notes. Settings: `Agents:Graph` (`Enabled`,
+`EmbeddingAlias` "embed", `Dimensions` 1024, which is part of the tables, `SmallModelAlias`, `TextSearchConfig`).
+A note forgotten, deleted with its chat or agent, or erased with its person leaves recall at once and the graph within
+a minute. The graph is made from the notes, so one lost can be made again: clear `GraphedAt` on the notes.
+
 **Chats.** `AgentChatService` gives a person their own chats with an agent: in a scope they may read, or
 about an item there. Each message is a run with the trigger `chat` and their rights, so every rule above holds; it gets
 the chat so far as the model's own turns (the newest 20 exchanges within 60,000 characters) and starts marked as the

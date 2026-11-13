@@ -302,6 +302,18 @@ public class AgentMemory : Entity<Guid>
     public DateTime LastUsedAt { get; set; }
 
     public int Uses { get; set; }
+
+    /// <summary>When it was read into the agent's graph (<see cref="IAgentMemoryGraph"/>): null while it waits, or with no graph.</summary>
+    public DateTime? GraphedAt { get; set; }
+
+    /// <summary>The graph's record of it (its episode): how the graph's facts name the notes they came from.</summary>
+    public string? GraphEpisode { get; set; }
+
+    /// <summary>How many times reading it into the graph failed: past a few, it's left as a note.</summary>
+    public int GraphFailures { get; set; }
+
+    /// <summary>Until when a server is reading it into the graph, so no other does at the same time.</summary>
+    public DateTime? GraphLeasedUntil { get; set; }
 }
 
 /// <summary>

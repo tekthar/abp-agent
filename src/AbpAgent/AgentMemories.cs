@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Volo.Abp;
 using Volo.Abp.DependencyInjection;
 
@@ -141,10 +142,65 @@ public sealed class AgentMemoryService(AgentsDb agentsDb, AgentService agents, I
             .OrderByDescending(x => x.Score).ThenByDescending(x => x.m.LastUsedAt)];
         List<(AgentMemory Memory, string Key)> given = await ReadableOnlyAsync(run.ActorId, ranked.Select(x => x.Memory), RecallSize, ct);
         await UsedAsync(given.Select(g => g.Memory.Id), ct);
+
+        // What the agent's graph learned from its notes, when it has one: facts whose every note the run's person may read.
+        (List<AgentGraphFact> facts, bool factsOutside) = query.Length > 0 ? await FactsAsync(run, agent, query, ct) : ([], false);
         return new Said(JsonSerializer.Serialize(new
         {
+            facts = facts.Select(f => new { fact = f.Fact, from = f.Memories, since = f.ValidAt, until = f.InvalidAt }),
             memories = given.Select(g => new { id = g.Memory.Id, about = g.Key, text = g.Memory.Text, kept = g.Memory.CreatedAt, outside = g.Memory.Outside }),
-        }), false, given.Any(g => g.Memory.Outside));
+        }), false, given.Any(g => g.Memory.Outside) || factsOutside);
+    }
+
+    /// <summary>
+    /// The facts the agent's graph holds for the words, of those whose every note the run's person may read now, and whether
+    /// any came from a note kept after outside content. None without a graph, or when it fails: the notes still answer.
+    /// </summary>
+    private async Task<(List<AgentGraphFact> Facts, bool Outside)> FactsAsync(AgentRun run, Agent agent, string query, CancellationToken ct)
+    {
+        if (services.GetService<IAgentMemoryGraph>() is not { Ready: true } graph)
+        {
+            return ([], false);
+        }
+
+        HashSet<Guid> outside = [];
+        Dictionary<(string, Guid), bool> itemReadable = [];
+        async ValueTask<IReadOnlySet<Guid>> ReadableAsync(IReadOnlyCollection<Guid> ids, CancellationToken token)
+        {
+            List<AgentMemory> rows = await agentsDb.RunAsync(db => db.AgentMemories.AsNoTracking()
+                .Where(m => ids.Contains(m.Id) && m.AgentId == agent.Id && m.ScopeId == run.ScopeId).ToListAsync(token), cancellationToken: token);
+            HashSet<Guid> readable = [];
+            foreach (AgentMemory m in rows)
+            {
+                if (!itemReadable.TryGetValue((m.ItemKind, m.ItemId), out bool may))
+                {
+                    itemReadable[(m.ItemKind, m.ItemId)] = may = await GetAsync(m.ItemKind, m.ItemId, token) is { } item && await this.ReadableAsync(run.ActorId, item, token);
+                }
+
+                if (may)
+                {
+                    readable.Add(m.Id);
+                    if (m.Outside)
+                    {
+                        outside.Add(m.Id);
+                    }
+                }
+            }
+
+            return readable;
+        }
+
+        try
+        {
+            IReadOnlyList<AgentGraphFact> facts = await graph.RecallAsync(new AgentGraphRecall(agent.Id, agent.Key, agent.AccountId, agent.ModelAlias, run.ScopeId,
+                query, RecallSize, ReadableAsync), ct);
+            return ([.. facts], facts.Any(f => f.Memories.Any(outside.Contains)));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            services.GetService<Microsoft.Extensions.Logging.ILogger<AgentMemoryService>>()?.LogWarning(ex, "Agent {Agent}'s graph couldn't be searched; its notes answer alone", agent.Key);
+            return ([], false);
+        }
     }
 
     /// <summary>Lets one of the agent's memories in the run's scope go, when the run's person may read its item.</summary>

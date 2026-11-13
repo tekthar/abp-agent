@@ -6,6 +6,25 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+Graph memory. What a host changes: a migration for four new `agent_memories` columns (`GraphedAt`, `GraphEpisode`,
+`GraphFailures`, `GraphLeasedUntil`); to have the graph, depend on `AbpAgentGraphitiModule` (package `AbpAgent.Graphiti`),
+give `IAgentEmbeddings`, and run PostgreSQL with pgvector. Without it, nothing changes.
+
+### Added
+
+- `AbpAgent.Graphiti`: agents' memory as a temporal knowledge graph, with graphiti-net 0.1.0 on PostgreSQL and pgvector.
+  Each note an agent keeps is read, after its run, into the things it names and the facts between them, in a graph per
+  agent per scope (`agent-{agent}-{scope}`); recall also gives the facts that match, each with the notes it came from,
+  only when the run's person may read every one of them now. The graph's tables are made at start in their own schema
+  (`Agents:Graph:Schema`, `agents_graph`); without pgvector, or on a read-only replica, it stays off and agents keep their
+  notes. Its model calls go through `IAgentModels` as the agent's account (purpose `agent:{key}:memory:{prompt}`), its
+  embeddings through `IAgentEmbeddings` (`Agents:Graph:EmbeddingAlias`, `embed`; `Dimensions`, 1024). A forgotten,
+  deleted or erased note leaves recall at once and the graph at the next sweep (strict removal). One write at a time per
+  graph, across servers (a PostgreSQL advisory lock).
+- `IAgentEmbeddings`, `AgentEmbedRequest` and `AgentEmbedding`: a host's embedding models; the default has none.
+- `IAgentMemoryGraph`, `AgentGraphRecall` and `AgentGraphFact`: the seam recall asks, when a graph is there.
+- `AgentMemory.GraphedAt`, `GraphEpisode`, `GraphFailures` and `GraphLeasedUntil`.
+
 ## [0.3.1] - 2026-11-12
 
 ### Fixed

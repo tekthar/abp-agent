@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>AbpAgent.Graphiti: agents' memory as a temporal knowledge graph, with graphiti-net on PostgreSQL and pgvector. Each note an agent keeps is read into the things it names and the facts between them; recall searches them, showing a fact only to people who may read every note it came from.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AbpAgent\AbpAgent.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GraphitiNet" Version="0.1.0" />
+    <PackageReference Include="GraphitiNet.PostgreSql" Version="0.1.0" />
+  </ItemGroup>
+
+</Project>

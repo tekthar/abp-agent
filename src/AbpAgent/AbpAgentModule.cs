@@ -21,6 +21,7 @@ public class AbpAgentModule : AbpModule
         context.Services.TryAddSingleton<IAgentSite, NoSafeMode>();
         context.Services.TryAddTransient<IAgentActingScope, NoActingScope>();
         context.Services.TryAddTransient<IAgentEvents, NoAgentEvents>();
+        context.Services.TryAddTransient<IAgentEmbeddings, NoAgentEmbeddings>();
         context.Services.TryAddSingleton<AgentRunWorker.Signal>();
         context.Services.TryAddTransient<IAgentRunQueue, AgentRunWorkerQueue>();
         context.Services.Configure<AgentsOptions>(context.Services.GetConfiguration().GetSection(AgentsOptions.Section));

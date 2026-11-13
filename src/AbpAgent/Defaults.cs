@@ -215,6 +215,13 @@ public sealed class AgentTranscripts(IServiceScopeFactory scopes, IOptions<Agent
     }
 }
 
+/// <summary>The default: no embedding model, so agents' memories stay notes found by their words.</summary>
+public sealed class NoAgentEmbeddings : IAgentEmbeddings
+{
+    public Task<AgentEmbedding> EmbedAsync(AgentEmbedRequest request, CancellationToken cancellationToken) =>
+        throw new AgentModelRefusedException("no_model", "No embedding model is set up for agents' memory.");
+}
+
 /// <summary>The default: nobody is told a run ended.</summary>
 public sealed class NoAgentEvents : IAgentEvents
 {

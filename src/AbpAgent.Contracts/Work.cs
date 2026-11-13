@@ -230,6 +230,38 @@ public interface IAgentModels
         AgentModelStreams.WholeAsync(this, request, cancellationToken);
 }
 
+/// <summary>
+/// Texts to embed for an agent (a graph memory's entities, facts and searches): whose account pays, where (a scope's
+/// models and limits), which alias, the texts, and what for (<c>agent:{key}:memory</c>). <see cref="InputType"/> says
+/// whether they're kept (<c>document</c>) or searched with (<c>query</c>), for models that embed the two differently;
+/// <see cref="Dimensions"/> is the size the graph's vectors have, which the model must give.
+/// </summary>
+public sealed record AgentEmbedRequest(Guid AccountId, Guid? ScopeId, string Alias, IReadOnlyList<string> Texts, string Purpose)
+{
+    public int? Dimensions { get; init; }
+
+    /// <summary><c>document</c> or <c>query</c>.</summary>
+    public string? InputType { get; init; }
+
+    /// <summary>What the texts are about, for the host's usage records: a kind (<c>memory</c>) and its id.</summary>
+    public string? AboutKind { get; init; }
+
+    public string? AboutId { get; init; }
+}
+
+/// <summary>The vectors, in the texts' order, the model that made them, and what it cost.</summary>
+public sealed record AgentEmbedding(IReadOnlyList<float[]> Vectors, string Model, int InputTokens, decimal Cost);
+
+/// <summary>
+/// The host's embedding models: an AI gateway's, with its aliases, data rules and limits, as its completions have. The
+/// default has none, and refuses: an agent's memory then stays a list of notes found by their words.
+/// </summary>
+public interface IAgentEmbeddings
+{
+    /// <summary>The vectors; <see cref="AgentModelRefusedException"/> when no model may embed them or a limit is reached.</summary>
+    Task<AgentEmbedding> EmbedAsync(AgentEmbedRequest request, CancellationToken cancellationToken);
+}
+
 /// <summary>Streams for a host's model.</summary>
 public static class AgentModelStreams
 {

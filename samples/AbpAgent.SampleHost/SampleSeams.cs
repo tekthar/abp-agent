@@ -299,6 +299,11 @@ public sealed partial class ScriptedModel : IAgentModels, ITransientDependency
 
     public Task<AgentModelReply> CompleteAsync(AgentModelRequest request, CancellationToken cancellationToken)
     {
+        if (SampleGraphModel.IsGraphCall(request))
+        {
+            return Task.FromResult(SampleGraphModel.Answer(request)); // the graph's prompts, answered by rule
+        }
+
         List<(string Tool, string Input)> script = [.. Line().Matches(request.System).Select(m => (m.Groups["tool"].Value, m.Groups["input"].Value.Trim()))];
         JsonArray messages = JsonNode.Parse(request.Messages.GetRawText())!.AsArray();
         int done = messages.Count(m => (string?)m?["role"] == "assistant" && m?["content"] is JsonArray c && c.Any(b => (string?)b?["type"] == "tool_use"));
