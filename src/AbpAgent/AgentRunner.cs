@@ -616,8 +616,9 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             // A change beyond the run's scope asks before it's made, not after, and so does one of the host's own tools
             // whose landing can't be told (fail closed): the run is marked as reaching beyond its scope, so neither its
             // settings nor a standing permission (both its scope's) let the change run. A plugin's tool, which names
-            // things in its own words, is looked at after it runs, as before.
-            if (lands is { } scope ? scope != run.ScopeId : !placed && !tool.FromPlugin)
+            // things in its own words, is looked at after it runs, as before. A change on an item in another scope that its
+            // kind says isn't beyond this run (an asset the run's record names) is the run's own, as reading it would be.
+            if (lands is { } scope ? scope != run.ScopeId && await BeyondAsync(run, item, tool, input, ct) : !placed && !tool.FromPlugin)
             {
                 await SetMarksAsync(run.Id, new AgentBrought(false, true), ct);
             }
@@ -791,6 +792,14 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     /// What the keys a read named brought in, as each kind answers for its own: a key known to be a kind's goes to it
     /// alone (two kinds' keys can look alike), and one of no known kind to every kind.
     /// </summary>
+    /// <summary>
+    /// Whether a change that lands in another scope reaches beyond the run's: yes, unless it names an item whose kind says
+    /// it isn't beyond this run, as the kind would say of reading it (a record's run changing an asset the record names).
+    /// A change that names no item, only another scope, is beyond.
+    /// </summary>
+    private async Task<bool> BeyondAsync(AgentRun run, AgentItemRef? item, AgentTool tool, JsonNode input, CancellationToken ct) =>
+        ItemKey(input) is not { } key || (await BroughtAsync(run, item, [(key, tool.ItemKind)], ct)).Beyond;
+
     private async Task<AgentBrought> BroughtAsync(AgentRun run, AgentItemRef? item, IReadOnlyCollection<(string Key, string? Kind)> keys, CancellationToken ct)
     {
         AgentBrought brought = AgentBrought.Nothing;

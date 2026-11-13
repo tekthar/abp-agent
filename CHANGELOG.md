@@ -6,6 +6,16 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-11-13
+
+### Fixed
+
+- A change on an item in another scope counted as beyond the run's scope, whatever the item's kind says, so it asked
+  every time and marked the run wide, though reading the same item didn't: a record's run changing an asset the
+  record names (an asset lives in its schema's scope) asked despite the tool being set to run (found by Toda's assets
+  e2e). The change's item kind now decides, as for a read (`IAgentItemKind.BroughtAsync`); a change that names no item,
+  only another scope, is beyond as before.
+
 ## [0.5.2] - 2026-11-13
 
 ### Fixed
