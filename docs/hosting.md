@@ -73,6 +73,8 @@ on a read-only replica, the graph stays off and agents keep their notes. Setting
 `EmbeddingAlias` "embed", `Dimensions` 1024, which is part of the tables, `SmallModelAlias`, `TextSearchConfig`).
 A note forgotten, deleted with its chat or agent, or erased with its person leaves recall at once and the graph within
 a minute. The graph is made from the notes, so one lost can be made again: clear `GraphedAt` on the notes.
+To let an agent's admins browse it, serve `AgentMemoryService.GraphAsync`: in one scope, the things (by words in their
+names or facts), and around one thing its facts with the notes they came from, under the same rule; it calls no model.
 
 **Chats.** `AgentChatService` gives a person their own chats with an agent: in a scope they may read, or
 about an item there. Each message is a run with the trigger `chat` and their rights, so every rule above holds; it gets

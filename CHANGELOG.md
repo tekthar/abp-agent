@@ -6,6 +6,8 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-13
+
 Browsing an agent's graph. Nothing for a host to migrate.
 
 ### Added
