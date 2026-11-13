@@ -551,7 +551,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         // agent's read writes as the host's do.
         bool reads = tool is { ReadsOnly: true, FromPlugin: false };
         // Where a change lands, looked up before it runs: its item's scope, or the scope its input makes something in.
-        (Guid? lands, bool placed) = tool is not null && !reads ? await ScopeOfAsync(tool, input, ct) : (null, true);
+        (Guid? lands, bool placed) = tool is not null && !reads ? await ScopeOfAsync(tool, input, run.ScopeId, ct) : (null, true);
         AgentRunStep step = new(Guid.NewGuid(), run.Id, number, "tool", Cut(name, 200), Cut(input.ToJsonString()))
         {
             Writes = !reads,
@@ -1056,9 +1056,10 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
     /// Where a call that changes things lands: its item's scope (the item looked up by the tool's kind, or by every kind
     /// its key's shape fits), else the scope its input names or makes something in, as the kinds read it. Placed but no
     /// scope when it names an item by a kind's key that isn't there (the call fails as it runs); not placed when it names
-    /// nothing a kind can place, a "key" no kind's shape fits included.
+    /// nothing a kind can place, a "key" no kind's shape fits included. A tool that works inside the run's scope (a
+    /// sandbox of the agent's there) lands in it when its input names nowhere else.
     /// </summary>
-    private async Task<(Guid? Scope, bool Placed)> ScopeOfAsync(AgentTool tool, JsonNode input, CancellationToken ct)
+    private async Task<(Guid? Scope, bool Placed)> ScopeOfAsync(AgentTool tool, JsonNode input, Guid runScope, CancellationToken ct)
     {
         if (ItemKey(input) is { } key)
         {
@@ -1080,7 +1081,7 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
             }
         }
 
-        return await NamedScopeAsync(tool, input, ct) is { } named ? (named, true) : (null, false);
+        return await NamedScopeAsync(tool, input, ct) is { } named ? (named, true) : tool.Reach == AgentToolReach.Inside ? (runScope, true) : (null, false);
     }
 
     /// <summary>

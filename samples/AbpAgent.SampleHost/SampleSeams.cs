@@ -190,6 +190,10 @@ public sealed class SampleTools(SampleDb sampleDb, SampleDirectory directory, Ti
             ReadsOnly: true, FromPlugin: false, Reach: AgentToolReach.Across),
         new("who_is_who", "Who's who", "The people who work at the run's desk.", JsonDocument.Parse("""{"type":"object"}""").RootElement,
             ReadsOnly: true, FromPlugin: false, Reach: AgentToolReach.Inside),
+        // A change in a place of the agent's own at the run's desk (a scratchpad, as a sandbox would be): it lands there.
+        new("keep_scratch", "Keep a scratch note", "Keeps a line in the agent's own scratchpad at the run's desk.",
+            JsonDocument.Parse("""{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}""").RootElement,
+            ReadsOnly: false, FromPlugin: false, Reach: AgentToolReach.Inside),
         // A plugin's tool that would send a mail: what it does can't be taken back, so it's never always allowed.
         new("email_customer", "Mail the customer", "Mails a ticket's customer (the sample only says it did).", KeyInput, ReadsOnly: false, FromPlugin: true),
         // An outside system read with the run's own person's account: it runs, and what it brings is outside content.
@@ -230,6 +234,11 @@ public sealed class SampleTools(SampleDb sampleDb, SampleDirectory directory, Ti
             }
 
             return new AgentToolResult(JsonSerializer.Serialize(desks), false);
+        }
+
+        if (name == "keep_scratch")
+        {
+            return new AgentToolResult(acting.ReadOnly ? "keep_scratch writes, and this act may only read." : "Kept.", acting.ReadOnly);
         }
 
         if (name == "who_is_who")

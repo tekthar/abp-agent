@@ -129,6 +129,22 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         Assert.NotEqual("high", (await SendAsync(HttpMethod.Get, $"/api/tickets/{elsewhere}", Ben)).GetProperty("priority").GetString());
     }
 
+    [Fact]
+    public async Task A_change_inside_the_runs_own_place_lands_in_its_desk_and_follows_its_settings()
+    {
+        // A tool that works in a place of the agent's own at the run's desk (Inside: a sandbox, a scratchpad) names no ticket
+        // and no desk, yet it isn't beyond the desk: set to run, it runs, and the run isn't marked wide.
+        string agent = await SetUpAgentAsync("scratcher", """
+            demo: keep_scratch {"text":"sum=6"}
+            demo-answer: Done.
+            """, new { keep_scratch = "run" });
+        string ticket = await TicketAsync(Ben, "DESK", "Here");
+
+        JsonElement run = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
+        Assert.True(Tools(run) is ["keep_scratch:done"], run.ToString());
+        Assert.False(run.GetProperty("wide").GetBoolean());
+    }
+
     [Theory]
     [InlineData("placeless", """{"priority":"high"}""")]
     [InlineData("keyless", """{"key":"not a ticket","priority":"high"}""")]

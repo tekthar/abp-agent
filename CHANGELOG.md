@@ -6,6 +6,16 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-13
+
+### Fixed
+
+- A tool that changes things only in a place of the agent's own in the run's scope (`AgentToolReach.Inside`, such as
+  AbpSandbox's tools) counted as one whose landing can't be told, when its input named no item or scope: it marked the
+  run as reaching beyond its scope and asked every time, whatever the agent's settings. It now lands in the run's scope,
+  unless its input names another, and follows the settings like any tool there. A tool with the default reach that names
+  nowhere still asks (fail closed).
+
 ## [0.5.0] - 2026-11-13
 
 Browsing an agent's graph. Nothing for a host to migrate.

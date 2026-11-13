@@ -121,7 +121,10 @@ public enum AgentToolReach
     /// <summary>Items it names in its input or answer: each is looked at.</summary>
     Items,
 
-    /// <summary>Only what's inside the team and the run's scope (who's who, saved queries, docs): it marks nothing.</summary>
+    /// <summary>
+    /// Only what's inside the team and the run's scope (who's who, saved queries, docs): it marks nothing. A change it
+    /// makes lands in the run's scope, in a place of the agent's own there (a sandbox), unless its input names another.
+    /// </summary>
     Inside,
 
     /// <summary>Across scopes (the site's list of projects): it marks the run as having read beyond its scope.</summary>
