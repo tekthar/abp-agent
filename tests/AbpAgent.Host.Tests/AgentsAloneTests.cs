@@ -132,6 +132,18 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_runs_model_calls_say_whose_run_it_is()
+    {
+        // The model call carries the person who started the run, so a host's AI counts it for them too.
+        string agent = await SetUpAgentAsync("attributed", """
+            demo-answer: For $startedBy.
+            """);
+        string ticket = await TicketAsync(Ben, "DESK", "Whose");
+        JsonElement run = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/tickets/{ticket}/agent-runs", Ben, new { agentId = agent, prompt = "Go" }));
+        Assert.Equal($"For {Ben}.", run.GetProperty("answer").GetString());
+    }
+
+    [Fact]
     public async Task A_host_with_no_item_kinds_offers_no_memory_tools()
     {
         // Memories are kept about items: a host that has no item kinds gets no remember, recall or forget, even with the

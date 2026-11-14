@@ -202,7 +202,7 @@ public sealed class AgentMemoryService(AgentsDb agentsDb, AgentService agents, I
         try
         {
             IReadOnlyList<AgentGraphFact> facts = await graph.RecallAsync(new AgentGraphRecall(agent.Id, agent.Key, agent.AccountId, agent.ModelAlias, run.ScopeId,
-                query, RecallSize, ReadableAsync), ct);
+                query, RecallSize, ReadableAsync) { StartedBy = run.StartedBy }, ct);
             return ([.. facts], facts.Any(f => f.Memories.Any(outside.Contains)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

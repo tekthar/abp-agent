@@ -6,6 +6,15 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-11-14
+
+### Fixed
+
+- An agent's model and embedding calls said only the agent's account, so a host's AI counted none of them for the
+  person who asked: their usage showed nothing, and per-person limits never applied. `AgentModelRequest.StartedBy` and
+  `AgentEmbedRequest.StartedBy` now carry the person: who started the run (null when the system did), or for an
+  agent's graph memory, whose run kept the note. AbpAi.Agents 0.7.1 counts the call for them by default.
+
 ## [0.5.3] - 2026-11-13
 
 ### Fixed

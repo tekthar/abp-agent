@@ -9,7 +9,11 @@ public sealed record AgentGraphFact(string Fact, IReadOnlyList<Guid> Memories, D
 /// every memory it was learned from, since its words can carry any of them.
 /// </summary>
 public sealed record AgentGraphRecall(Guid AgentId, string AgentKey, Guid AccountId, string ModelAlias, Guid ScopeId, string Query, int Take,
-    Func<IReadOnlyCollection<Guid>, CancellationToken, ValueTask<IReadOnlySet<Guid>>> Readable);
+    Func<IReadOnlyCollection<Guid>, CancellationToken, ValueTask<IReadOnlySet<Guid>>> Readable)
+{
+    /// <summary>Who started the run that recalls (null when the system did): its embeddings count for them too.</summary>
+    public Guid? StartedBy { get; init; }
+}
 
 /// <summary>
 /// A thing in an agent's graph, as a reader may see it: its name, what the notes say of it (null when a note that names it

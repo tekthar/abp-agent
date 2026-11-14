@@ -192,7 +192,15 @@ public interface IAgentTools
 /// the tools offered, and what the call is for (<c>agent:{key}</c>).
 /// </summary>
 public sealed record AgentModelRequest(Guid AccountId, Guid? ScopeId, string Alias, JsonElement Messages, string System, JsonElement? Tools, int MaxTokens,
-    string Purpose, Guid? ItemId);
+    string Purpose, Guid? ItemId)
+{
+    /// <summary>
+    /// The person the call is for: who started the run (null when the system did), or for an agent's memory, whose run
+    /// kept the note. A host's AI counts the call for them too (their usage, their per-person limits) beside the agent's
+    /// account.
+    /// </summary>
+    public Guid? StartedBy { get; init; }
+}
 
 /// <summary>The model's reply: the assistant message (role, content blocks, stop_reason), the model, and what it cost.</summary>
 public sealed record AgentModelReply(JsonElement Message, string Model, int InputTokens, int OutputTokens, decimal Cost);
@@ -244,6 +252,12 @@ public interface IAgentModels
 /// </summary>
 public sealed record AgentEmbedRequest(Guid AccountId, Guid? ScopeId, string Alias, IReadOnlyList<string> Texts, string Purpose)
 {
+    /// <summary>
+    /// The person the texts are embedded for: whose run kept the note, or who started the run that recalls (null when the
+    /// system did). A host's AI counts the call for them too, beside the agent's account.
+    /// </summary>
+    public Guid? StartedBy { get; init; }
+
     public int? Dimensions { get; init; }
 
     /// <summary><c>document</c> or <c>query</c>.</summary>

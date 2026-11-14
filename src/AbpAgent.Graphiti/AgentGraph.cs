@@ -94,7 +94,10 @@ public sealed class AgentGraph(IServiceScopeFactory scopes, IOptions<AgentGraphO
     public async Task<IReadOnlyList<AgentGraphFact>> RecallAsync(AgentGraphRecall recall, CancellationToken cancellationToken)
     {
         GraphitiNet.Graphiti graphiti = _graphiti ?? throw new InvalidOperationException(Why);
-        using IDisposable call = AgentGraphCall.Begin(new AgentGraphCall(recall.AgentId, recall.AgentKey, recall.AccountId, recall.ScopeId, recall.ModelAlias, null, null));
+        using IDisposable call = AgentGraphCall.Begin(new AgentGraphCall(recall.AgentId, recall.AgentKey, recall.AccountId, recall.ScopeId, recall.ModelAlias, null, null)
+        {
+            StartedBy = recall.StartedBy,
+        });
         ReadableNotes readable = new(this, recall.Readable);
         IReadOnlyList<EntityEdge> edges = await graphiti.SearchAsync(recall.Query, groupIds: [Group(recall.AgentId, recall.ScopeId)], numResults: recall.Take,
             episodeAccessFilter: readable, cancellationToken: cancellationToken);
@@ -205,7 +208,10 @@ public sealed class AgentGraph(IServiceScopeFactory scopes, IOptions<AgentGraphO
             earlier = await db.Episodes.AsNoTracking().Where(e => e.GroupId == group && e.Name == name).Select(e => e.Uuid).FirstOrDefaultAsync(ct);
         }
 
-        using IDisposable call = AgentGraphCall.Begin(new AgentGraphCall(agent.Id, agent.Key, agent.AccountId, memory.ScopeId, agent.ModelAlias, memory.ItemId, memory.Id));
+        using IDisposable call = AgentGraphCall.Begin(new AgentGraphCall(agent.Id, agent.Key, agent.AccountId, memory.ScopeId, agent.ModelAlias, memory.ItemId, memory.Id)
+        {
+            StartedBy = memory.RememberedBy, // whose run kept the note
+        });
         AddEpisodeResults added = await graphiti.AddEpisodeAsync(name, $"{itemKey}: {memory.Text}", $"a note {agent.Key} kept about {itemKey}",
             new DateTimeOffset(DateTime.SpecifyKind(memory.CreatedAt, DateTimeKind.Utc)), EpisodeType.Text, group, earlier,
             episodeMetadata: new Dictionary<string, object?>

@@ -18,6 +18,9 @@ namespace AbpAgent.Graphiti;
 /// </summary>
 internal sealed record AgentGraphCall(Guid AgentId, string AgentKey, Guid AccountId, Guid ScopeId, string ModelAlias, Guid? ItemId, Guid? MemoryId)
 {
+    /// <summary>The person the call is for: whose run kept the note, or started the recall; null for the system's sweep.</summary>
+    public Guid? StartedBy { get; init; }
+
     private static readonly AsyncLocal<AgentGraphCall?> Now = new();
 
     public static AgentGraphCall? Current => Now.Value;
@@ -57,7 +60,10 @@ internal sealed class AgentGraphLlm(IServiceScopeFactory scopes, AgentGraphOptio
         string alias = modelSize == ModelSize.Small && !string.IsNullOrWhiteSpace(options.SmallModelAlias) ? options.SmallModelAlias : call.ModelAlias;
         await using AsyncServiceScope scope = scopes.CreateAsyncScope();
         AgentModelReply reply = await scope.ServiceProvider.GetRequiredService<IAgentModels>().CompleteAsync(new AgentModelRequest(call.AccountId, call.ScopeId, alias,
-            JsonSerializer.SerializeToElement(turns), system, null, maxTokens, $"agent:{call.AgentKey}:memory:{prompt}", call.ItemId), cancellationToken);
+            JsonSerializer.SerializeToElement(turns), system, null, maxTokens, $"agent:{call.AgentKey}:memory:{prompt}", call.ItemId)
+        {
+            StartedBy = call.StartedBy,
+        }, cancellationToken);
         string text = reply.Message.TryGetProperty("content", out JsonElement content) && content.ValueKind == JsonValueKind.Array
             ? string.Concat(content.EnumerateArray().Where(b => b.TryGetProperty("type", out JsonElement t) && t.ValueEquals("text"))
                 .Select(b => b.TryGetProperty("text", out JsonElement x) ? x.GetString() : ""))
@@ -108,6 +114,7 @@ internal sealed class AgentGraphEmbedder(IServiceScopeFactory scopes, AgentGraph
         AgentEmbedding made = await scope.ServiceProvider.GetRequiredService<IAgentEmbeddings>().EmbedAsync(
             new AgentEmbedRequest(call.AccountId, call.ScopeId, options.EmbeddingAlias, inputDataList, $"agent:{call.AgentKey}:memory")
             {
+                StartedBy = call.StartedBy,
                 Dimensions = options.Dimensions,
                 InputType = GraphitiCallContext.Current?.Operation == "search" ? "query" : "document",
                 AboutKind = call.MemoryId is null ? null : "memory",

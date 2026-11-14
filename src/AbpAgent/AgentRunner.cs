@@ -113,8 +113,10 @@ public sealed class AgentRunner(AgentsDb agentsDb, AgentService agents, AgentRun
         try
         {
             reply = await ReplyAsync(run, new AgentModelRequest(agent.AccountId, run.ScopeId, agent.ModelAlias, JsonSerializer.SerializeToElement(messages),
-                Persona(agent, item is null ? "item" : Kind(item.Kind)?.Noun ?? "item", run.ChatId is not null), toolsJson, 4000, $"agent:{agent.Key}", run.ItemId),
-                cancellationToken);
+                Persona(agent, item is null ? "item" : Kind(item.Kind)?.Noun ?? "item", run.ChatId is not null), toolsJson, 4000, $"agent:{agent.Key}", run.ItemId)
+            {
+                StartedBy = run.StartedBy,
+            }, cancellationToken);
         }
         catch (AgentModelRefusedException ex)
         {
