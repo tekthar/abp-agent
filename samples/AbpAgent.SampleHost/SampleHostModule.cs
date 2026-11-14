@@ -14,7 +14,8 @@ namespace AbpAgent.SampleHost;
 /// tickets; it gives its accounts, rights, desks, tickets, tools and a scripted model, and keeps the package's defaults
 /// for the rest: the run queue, the audit (the log), safe mode (never) and acting (nothing to set).
 /// </summary>
-[DependsOn(typeof(AbpAutofacModule), typeof(AbpAspNetCoreMvcModule), typeof(AbpAgentModule), typeof(AbpAgent.Graphiti.AbpAgentGraphitiModule))]
+[DependsOn(typeof(AbpAutofacModule), typeof(AbpAspNetCoreMvcModule), typeof(AbpAgentModule), typeof(AbpAgent.Graphiti.AbpAgentGraphitiModule),
+    typeof(AbpAgent.HttpApi.AbpAgentHttpApiModule))]
 public class SampleHostModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
@@ -29,6 +30,8 @@ public class SampleHostModule : AbpModule
         context.Services.Replace(ServiceDescriptor.Transient<IAgentModels, ScriptedModel>());
         context.Services.Replace(ServiceDescriptor.Transient<IAgentEmbeddings, SampleEmbeddings>());
         context.Services.Replace(ServiceDescriptor.Transient<IAgentExitChecks, SampleExitChecks>());
+        // The package's API (AbpAgent.HttpApi) knows the caller as the sample's API does: by the X-Account header.
+        context.Services.Replace(ServiceDescriptor.Transient<AbpAgent.HttpApi.IAgentHttpCaller, SampleHttpCaller>());
         // The agents' refusals say what they are: a refusal is 403, a run still going 409.
         Configure<AbpExceptionHttpStatusCodeOptions>(options =>
         {

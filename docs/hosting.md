@@ -76,6 +76,12 @@ a minute. The graph is made from the notes, so one lost can be made again: clear
 To let an agent's admins browse it, serve `AgentMemoryService.GraphAsync`: in one scope, the things (by words in their
 names or facts), and around one thing its facts with the notes they came from, under the same rule; it calls no model.
 
+**The HTTP API.** With `AbpAgent.HttpApi` (depend on `AbpAgentHttpApiModule`), the services above are served under one
+prefix (`Agents:HttpApi:RoutePrefix`, `api/agent` by default), so every host has the same agents' API and the same
+screens can use it. You say who is calling through `IAgentHttpCaller` (the default is ABP's signed-in user; give your
+own to carry your rights object in `AgentActor.Principal`). What's yours stays in your own routes: outside connections,
+AI limits, pictures, undo. The routes: [docs/http-api.md](http-api.md).
+
 **Chats.** `AgentChatService` gives a person their own chats with an agent: in a scope they may read, or
 about an item there. Each message is a run with the trigger `chat` and their rights, so every rule above holds; it gets
 the chat so far as the model's own turns (the newest 20 exchanges within 60,000 characters) and starts marked as the

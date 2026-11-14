@@ -8,6 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\AbpAgent\AbpAgent.csproj" />
     <ProjectReference Include="..\..\src\AbpAgent.Graphiti\AbpAgent.Graphiti.csproj" />
+    <ProjectReference Include="..\..\src\AbpAgent.HttpApi\AbpAgent.HttpApi.csproj" />
     <PackageReference Include="Volo.Abp.Autofac" Version="$(AbpVersion)" />
     <PackageReference Include="Volo.Abp.AspNetCore.Mvc" Version="$(AbpVersion)" />
   </ItemGroup>

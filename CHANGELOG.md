@@ -6,6 +6,20 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+The agents' HTTP API, as a package. Nothing for a host to migrate; a host that serves its own agents' routes can keep
+them while its screens move.
+
+### Added
+
+- `AbpAgent.HttpApi` (`AbpAgentHttpApiModule`, opt-in): AbpAgent's services over HTTP under one prefix
+  (`Agents:HttpApi:RoutePrefix`, `api/agent` by default), so every host has the same API and hosts can share screens
+  (`@abpjs/agent`). It serves agents and the site's switch, a scope's agents, runs on items with their steps
+  and a JSON export, questions and answers, standing permissions, the tools an agent may be given, memories and the
+  graph, and a person's chats with live server-sent events (`Last-Event-ID` resumes). The host says who calls
+  (`IAgentHttpCaller`; the default is ABP's signed-in user) and may put the routes in their own OpenAPI group
+  (`Agents:HttpApi:OpenApiGroup`). `AbpAgent:Forbidden` answers 403 and `AbpAgent:Conflict` 409. docs/http-api.md has
+  the routes. The sample host serves it, with two host tests.
+
 ## [0.5.4] - 2026-11-14
 
 ### Fixed

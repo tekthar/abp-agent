@@ -434,3 +434,12 @@ public sealed class SampleExitChecks(SampleDb sampleDb) : IAgentExitChecks, ITra
         return priority == "high" ? [] : [$"{item.Key}'s priority set to high (set_priority)"];
     }
 }
+
+/// <summary>The caller of the package's API (AbpAgent.HttpApi): the X-Account header, as the sample's own API reads it.</summary>
+public sealed class SampleHttpCaller : AbpAgent.HttpApi.IAgentHttpCaller
+{
+    public Task<AgentActor> GetAsync(Microsoft.AspNetCore.Http.HttpContext context, CancellationToken cancellationToken) =>
+        context.Request.Headers.TryGetValue("X-Account", out var value) && Guid.TryParse(value, out Guid id)
+            ? Task.FromResult(new AgentActor(id))
+            : throw new Volo.Abp.Authorization.AbpAuthorizationException("Say who you are in the X-Account header.");
+}

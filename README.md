@@ -50,6 +50,8 @@ On [nuget.org](https://www.nuget.org/packages?q=AbpAgent):
 |---|---|
 | `AbpAgent.Contracts` | The contracts a host implements: accounts, rights, scopes, item kinds (`IAgentItemKind`), tools (`IAgentTools`), the model (`IAgentModels`), acting, the run queue, the audit. Nothing but .NET. |
 | `AbpAgent` | The ABP module: agents and runs, the runner, the cleaner, transcripts, the run queue, and the EF Core model you map. |
+| `AbpAgent.Graphiti` | Agents' memory as a temporal knowledge graph (graphiti-net on PostgreSQL with pgvector), recall over it, and the graph to browse. |
+| `AbpAgent.HttpApi` | The agents' HTTP API, the same for every host: agents, runs on items with their steps, questions, chats with live events, memories and the graph, standing permissions, assignable tools ([docs/http-api.md](docs/http-api.md)). Opt-in. |
 
 ## Use it in a host
 

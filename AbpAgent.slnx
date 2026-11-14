@@ -5,6 +5,7 @@
   <Folder Name="/src/">
     <Project Path="src/AbpAgent.Contracts/AbpAgent.Contracts.csproj" />
     <Project Path="src/AbpAgent.Graphiti/AbpAgent.Graphiti.csproj" />
+    <Project Path="src/AbpAgent.HttpApi/AbpAgent.HttpApi.csproj" />
     <Project Path="src/AbpAgent/AbpAgent.csproj" />
   </Folder>
   <Folder Name="/tests/">

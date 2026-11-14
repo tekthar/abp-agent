@@ -132,6 +132,68 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_package_API_serves_agents_runs_questions_and_chats()
+    {
+        // AbpAgent.HttpApi under its default prefix, the caller from the X-Account header (SampleHttpCaller).
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, (await RawAsync(HttpMethod.Get, "/api/agent/settings", Ben)).StatusCode);
+        Assert.True((await SendAsync(HttpMethod.Put, "/api/agent/settings", Admin, new { enabled = true })).GetProperty("enabled").GetBoolean());
+        JsonElement agent = await SendAsync(HttpMethod.Post, "/api/agent/agents", Admin, new
+        {
+            key = "packaged", offerAll = true, instructions = """
+                demo: set_priority {"key":"$ticket","priority":"high"}
+                demo-answer: Raised.
+                """,
+        });
+        string id = agent.GetProperty("id").GetString()!;
+        await SendAsync(HttpMethod.Put, $"/api/agent/scopes/DESK/agents/{id}/take", Admin, new { roleKey = "helper" });
+        Assert.Contains((await SendAsync(HttpMethod.Get, $"/api/agent/agents/{id}/tools", Admin)).EnumerateArray(), t => t.GetProperty("name").GetString() == "set_priority");
+
+        // On a ticket: its reader may ask the agent; set_priority asks first, and the answer lets the run go on.
+        string ticket = await TicketAsync(Ben, "DESK", "Packaged");
+        Assert.Contains((await SendAsync(HttpMethod.Get, $"/api/agent/items/ticket/{ticket}/agents", Ben)).EnumerateArray(), a => a.GetProperty("id").GetString() == id);
+        JsonElement waiting = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/agent/items/ticket/{ticket}/runs", Ben, new { agentId = id, prompt = "Raise it" }));
+        string run = waiting.GetProperty("id").GetString()!;
+        Assert.Equal("waiting", (await SendAsync(HttpMethod.Get, $"/api/agent/runs/{run}", Ben)).GetProperty("state").GetString());
+        JsonElement question = (await SendAsync(HttpMethod.Get, "/api/agent/questions", Ben)).EnumerateArray().Single(q => q.GetProperty("runId").GetString() == run);
+        await SendAsync(HttpMethod.Post, $"/api/agent/questions/{question.GetProperty("id").GetString()}/answer", Ben, new { answer = "allow" });
+        JsonElement done = await FinishedAsync(waiting);
+        Assert.Equal("done", done.GetProperty("state").GetString());
+        Assert.Equal("high", (await SendAsync(HttpMethod.Get, $"/api/tickets/{ticket}", Ben)).GetProperty("priority").GetString());
+        Assert.Contains((await SendAsync(HttpMethod.Get, $"/api/agent/items/ticket/{ticket}/runs", Ben)).EnumerateArray(), r => r.GetProperty("id").GetString() == run);
+
+        // The run with its steps as a JSON file.
+        HttpResponseMessage export = await RawAsync(HttpMethod.Get, $"/api/agent/runs/{run}/export", Ben);
+        Assert.Equal("application/json", export.Content.Headers.ContentType?.MediaType);
+        Assert.Equal($"agent-run-{Guid.Parse(run):N}.json", export.Content.Headers.ContentDisposition?.FileNameStar ?? export.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
+        using (JsonDocument file = JsonDocument.Parse(await export.Content.ReadAsStringAsync()))
+        {
+            Assert.Contains(file.RootElement.GetProperty("steps").EnumerateArray(), s => s.GetProperty("name").GetString() == "set_priority");
+        }
+
+        // A chat about the ticket, its events once its run ended, and deleting it.
+        JsonElement chatty = await SendAsync(HttpMethod.Post, "/api/agent/agents", Admin, new { key = "chatty", offerAll = true, instructions = "demo-answer: Hello $turn." });
+        string chattyId = chatty.GetProperty("id").GetString()!;
+        await SendAsync(HttpMethod.Put, $"/api/agent/scopes/DESK/agents/{chattyId}/take", Admin, new { roleKey = "helper" });
+        JsonElement chat = await SendAsync(HttpMethod.Post, "/api/agent/chats", Ben, new { agentId = chattyId, prompt = "Hi", kind = "ticket", key = ticket });
+        string chatId = chat.GetProperty("chat").GetProperty("id").GetString()!;
+        Assert.Equal("Hello 1.", (await FinishedAsync(chat.GetProperty("runs")[0])).GetProperty("answer").GetString());
+        Assert.Contains((await SendAsync(HttpMethod.Get, "/api/agent/chats", Ben)).EnumerateArray(), c => c.GetProperty("id").GetString() == chatId);
+        HttpResponseMessage events = await RawAsync(HttpMethod.Get, $"/api/agent/chats/{chatId}/events", Ben);
+        Assert.Equal("text/event-stream", events.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("event: run", await events.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, (await RawAsync(HttpMethod.Delete, $"/api/agent/chats/{chatId}", Ben)).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await RawAsync(HttpMethod.Get, $"/api/agent/chats/{chatId}", Ben)).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_package_API_is_under_the_hosts_prefix()
+    {
+        _factory = _root!.WithWebHostBuilder(host => host.UseSetting("Agents:HttpApi:RoutePrefix", "hq/agents"));
+        Assert.Equal(System.Net.HttpStatusCode.OK, (await RawAsync(HttpMethod.Get, "/hq/agents/settings", Admin)).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await RawAsync(HttpMethod.Get, "/api/agent/settings", Admin)).StatusCode);
+    }
+
+    [Fact]
     public async Task A_runs_model_calls_say_whose_run_it_is()
     {
         // The model call carries the person who started the run, so a host's AI counts it for them too.
