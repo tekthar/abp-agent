@@ -194,6 +194,35 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_package_APIs_sensitive_actions_take_the_hosts_check()
+    {
+        // A host's step-up stand-in on the actions marked [AgentSensitive]: it refuses them (428) without X-Step-Up.
+        _factory = _root!.WithWebHostBuilder(host => host.ConfigureServices(services =>
+            services.PostConfigure<AbpAgent.HttpApi.AgentHttpApiOptions>(o => o.Sensitive = action => action.Filters.Add(new StepUpFilter()))));
+        Assert.Equal(System.Net.HttpStatusCode.OK, (await RawAsync(HttpMethod.Get, "/api/agent/settings", Admin)).StatusCode);
+        Assert.Equal((System.Net.HttpStatusCode)428, (await RawAsync(HttpMethod.Put, "/api/agent/settings", Admin, new { enabled = true })).StatusCode);
+        using HttpRequestMessage stepped = new(HttpMethod.Put, "/api/agent/settings") { Content = JsonContent.Create(new { enabled = true }) };
+        stepped.Headers.Add("X-Account", Admin);
+        stepped.Headers.Add("X-Step-Up", "yes");
+        Assert.Equal(System.Net.HttpStatusCode.OK, (await _factory.CreateClient().SendAsync(stepped)).StatusCode);
+    }
+
+    private sealed class StepUpFilter : Microsoft.AspNetCore.Mvc.Filters.IActionFilter
+    {
+        public void OnActionExecuting(Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context)
+        {
+            if (!context.HttpContext.Request.Headers.ContainsKey("X-Step-Up"))
+            {
+                context.Result = new Microsoft.AspNetCore.Mvc.StatusCodeResult(428);
+            }
+        }
+
+        public void OnActionExecuted(Microsoft.AspNetCore.Mvc.Filters.ActionExecutedContext context)
+        {
+        }
+    }
+
+    [Fact]
     public async Task A_runs_model_calls_say_whose_run_it_is()
     {
         // The model call carries the person who started the run, so a host's AI counts it for them too.

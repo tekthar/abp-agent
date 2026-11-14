@@ -6,6 +6,16 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-14
+
+### Added
+
+- `[AgentSensitive]` on the HTTP API's actions that change agents or the site's switch, or hand out a run's data (the
+  switch, making, changing, pausing and resuming agents, a scope's agents and taking them on, forgetting a note, a
+  run's export, removing a standing permission), and `AgentHttpApiOptions.Sensitive` (`Action<ActionModel>`), where a
+  host adds its own check to them, a step-up sign-in say, as AbpAi.HttpApi's `[AiSensitive]` does. Nothing changes
+  until a host sets it (asked for by WrenAI enterprise for Insight).
+
 ## [0.6.0] - 2026-11-14
 
 The agents' HTTP API, as a package. Nothing for a host to migrate; a host that serves its own agents' routes can keep

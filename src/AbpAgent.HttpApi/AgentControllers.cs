@@ -52,7 +52,7 @@ public class AgentsController(AgentService agents, AgentMemoryService memories, 
         return await agents.SettingsAsync(ct);
     }
 
-    [HttpPut("settings")]
+    [HttpPut("settings"), AgentSensitive]
     public async Task<AgentSwitch> Switch([FromBody] AgentSwitchInput input, CancellationToken ct) => await agents.SwitchAsync((await SiteAdminAsync(ct)).Id, input.Enabled, ct);
 
     [HttpGet("agents")]
@@ -62,19 +62,19 @@ public class AgentsController(AgentService agents, AgentMemoryService memories, 
         return await agents.ListAsync(ct);
     }
 
-    [HttpPost("agents")]
+    [HttpPost("agents"), AgentSensitive]
     public async Task<AgentInfo> Create([FromBody] AgentChange input, CancellationToken ct) => await agents.CreateSiteAsync((await SiteAdminAsync(ct)).Id, input, ct);
 
     [HttpGet("agents/{id:guid}")]
     public async Task<AgentInfo> Get(Guid id, CancellationToken ct) => await agents.GetAsync(await CallerAsync(ct), id, ct);
 
-    [HttpPut("agents/{id:guid}")]
+    [HttpPut("agents/{id:guid}"), AgentSensitive]
     public async Task<AgentInfo> Update(Guid id, [FromBody] AgentChange input, CancellationToken ct) => await agents.UpdateAsync(await CallerAsync(ct), id, input, ct);
 
-    [HttpPost("agents/{id:guid}/pause")]
+    [HttpPost("agents/{id:guid}/pause"), AgentSensitive]
     public async Task<AgentInfo> Pause(Guid id, CancellationToken ct) => await agents.PauseAsync(await CallerAsync(ct), id, true, ct);
 
-    [HttpPost("agents/{id:guid}/resume")]
+    [HttpPost("agents/{id:guid}/resume"), AgentSensitive]
     public async Task<AgentInfo> Resume(Guid id, CancellationToken ct) => await agents.PauseAsync(await CallerAsync(ct), id, false, ct);
 
     [HttpGet("agents/{id:guid}/usage")]
@@ -94,7 +94,7 @@ public class AgentsController(AgentService agents, AgentMemoryService memories, 
     public async Task<List<AgentMemoryInfo>> Memories(Guid id, [FromQuery] string? scope, [FromQuery] string? kind, [FromQuery] string? key, CancellationToken ct) =>
         await memories.ListAsync(await CallerAsync(ct), id, scope, kind, key, ct);
 
-    [HttpDelete("agents/{id:guid}/memories/{memoryId:guid}")]
+    [HttpDelete("agents/{id:guid}/memories/{memoryId:guid}"), AgentSensitive]
     public async Task<NoContentResult> Forget(Guid id, Guid memoryId, CancellationToken ct)
     {
         await memories.DeleteAsync(await CallerAsync(ct), id, memoryId, ct);
@@ -111,15 +111,15 @@ public class AgentsController(AgentService agents, AgentMemoryService memories, 
     [HttpGet("scopes/{scope}/agents")]
     public async Task<List<ScopeAgentInfo>> ForScope(string scope, CancellationToken ct) => await agents.ForScopeAsync(await CallerAsync(ct), scope, ct);
 
-    [HttpPost("scopes/{scope}/agents")]
+    [HttpPost("scopes/{scope}/agents"), AgentSensitive]
     public async Task<AgentInfo> CreateForScope(string scope, [FromBody] AgentChange input, CancellationToken ct) =>
         await agents.CreateForScopeAsync(await CallerAsync(ct), scope, input, ct);
 
-    [HttpPut("scopes/{scope}/agents/{id:guid}/take")]
+    [HttpPut("scopes/{scope}/agents/{id:guid}/take"), AgentSensitive]
     public async Task<ScopeAgentInfo> Take(string scope, Guid id, [FromBody] AgentTakeInput input, CancellationToken ct) =>
         await agents.TakeAsync(await CallerAsync(ct), scope, id, input.RoleKey, ct);
 
-    [HttpDelete("scopes/{scope}/agents/{id:guid}/take")]
+    [HttpDelete("scopes/{scope}/agents/{id:guid}/take"), AgentSensitive]
     public async Task<NoContentResult> TakeOff(string scope, Guid id, CancellationToken ct)
     {
         await agents.TakeOffAsync(await CallerAsync(ct), scope, id, ct);
@@ -147,7 +147,7 @@ public class AgentRunsController(AgentRunService runs, AgentPermissionService pe
     public async Task<AgentRunInfo> Get(Guid id, CancellationToken ct) => await runs.GetAsync(await CallerAsync(ct), id, ct);
 
     /// <summary>The run with its steps as a JSON file, to dig into what went wrong: what the run's reader may see of it.</summary>
-    [HttpGet("runs/{id:guid}/export")]
+    [HttpGet("runs/{id:guid}/export"), AgentSensitive]
     public async Task<FileContentResult> ExportRun(Guid id, CancellationToken ct) =>
         File(JsonSerializer.SerializeToUtf8Bytes(await runs.GetAsync(await CallerAsync(ct), id, ct), Export), "application/json", $"agent-run-{id:N}.json");
 
@@ -164,7 +164,7 @@ public class AgentRunsController(AgentRunService runs, AgentPermissionService pe
     [HttpGet("me/permissions")]
     public async Task<List<AgentPermissionInfo>> MyPermissions(CancellationToken ct) => await permissions.MineAsync(await CallerAsync(ct), ct);
 
-    [HttpPost("permissions/remove")]
+    [HttpPost("permissions/remove"), AgentSensitive]
     public async Task<NoContentResult> RemovePermission([FromBody] AgentPermissionRemoveInput input, CancellationToken ct)
     {
         await permissions.RemoveAsync(await CallerAsync(ct), input.PersonId, input.AgentId, input.Tool, input.ScopeId, ct);

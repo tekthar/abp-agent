@@ -12,6 +12,9 @@ API (a worker) doesn't take it.
   a host whose item kinds read rights from a principal (an ability) replaces it. No caller, no answer (401).
 - **An OpenAPI group, if it wants one:** `Agents:HttpApi:OpenApiGroup`. Unset, the routes are in the host's own
   document.
+- **A check of its own on sensitive actions, if it wants one:** `AgentHttpApiOptions.Sensitive` (`Action<ActionModel>`,
+  set in code) runs on every action marked `[AgentSensitive]`: those that change agents or the site's switch, or hand
+  out a run's data (its export). A host adds its step-up sign-in there, say.
 
 Refusals keep AbpAgent's codes: `AbpAgent:Forbidden` answers 403 and `AbpAgent:Conflict` 409. The services already check
 who may do what (an agent's admins, the run's person, rights on items), so the controllers only map requests to them.

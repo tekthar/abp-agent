@@ -24,7 +24,17 @@ public class AgentHttpApiOptions
 
     /// <summary>The OpenAPI group the routes are in; unset, the host's own document.</summary>
     public string? OpenApiGroup { get; set; }
+
+    /// <summary>
+    /// What an action that changes the agents' settings or hands out a run's data needs besides
+    /// (<see cref="AgentSensitiveAttribute"/>): a host adds its own check to it here, a step-up sign-in say.
+    /// </summary>
+    public Action<ActionModel>? Sensitive { get; set; }
 }
+
+/// <summary>An action that changes agents or the site's switch, or hands out a run's data, for <see cref="AgentHttpApiOptions.Sensitive"/>.</summary>
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class AgentSensitiveAttribute : Attribute;
 
 /// <summary>The routes' prefix, as the controllers write it before the host's own replaces it.</summary>
 public static class AgentRoutes
@@ -90,6 +100,14 @@ public sealed class AgentRouteConvention(AgentHttpApiOptions options) : IApplica
             if (options.OpenApiGroup is { Length: > 0 } group)
             {
                 controller.ApiExplorer.GroupName = group;
+            }
+
+            if (options.Sensitive is { } sensitive)
+            {
+                foreach (ActionModel action in controller.Actions.Where(a => a.Attributes.OfType<AgentSensitiveAttribute>().Any()))
+                {
+                    sensitive(action);
+                }
             }
         }
     }
