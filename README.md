@@ -53,6 +53,8 @@ On [nuget.org](https://www.nuget.org/packages?q=AbpAgent):
 | `AbpAgent.Graphiti` | Agents' memory as a temporal knowledge graph (graphiti-net on PostgreSQL with pgvector), recall over it, and the graph to browse. |
 | `AbpAgent.HttpApi` | The agents' HTTP API, the same for every host: agents, runs on items with their steps, questions, chats with live events, memories and the graph, standing permissions, assignable tools ([docs/http-api.md](docs/http-api.md)). Opt-in. |
 
+Coming from ABP's module template? [Where ABP's layers are in this repository](docs/abp-layers.md).
+
 ## Use it in a host
 
 `samples/AbpAgent.SampleHost` is a complete host: a help desk's tickets in their own table, worked on by agents with
