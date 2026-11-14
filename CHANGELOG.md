@@ -6,6 +6,8 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-14
+
 The agents' HTTP API, as a package. Nothing for a host to migrate; a host that serves its own agents' routes can keep
 them while its screens move.
 
