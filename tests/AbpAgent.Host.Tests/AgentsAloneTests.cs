@@ -53,6 +53,50 @@ public sealed class AgentsAloneTests : IAsyncLifetime
         await drop.ExecuteNonQueryAsync();
     }
 
+    /// <summary>
+    /// The agents' API's document, kept in docs/openapi/abpagent.json: what a host's screens generate their types from
+    /// (@abpjs/ui's agent area). The sample serves it at /openapi/abpagent.json; this fails when the kept copy differs,
+    /// and ABP_AGENT_UPDATE_OPENAPI=1 writes it instead.
+    /// </summary>
+    [Fact]
+    public async Task The_kept_document_is_the_one_the_agents_API_serves()
+    {
+        string served = await _factory!.CreateClient().GetStringAsync("/openapi/abpagent.json");
+        JsonNode document = JsonNode.Parse(served)!;
+
+        // Only AbpAgent.HttpApi's actions: the sample's own help desk (api/desks) is in no group of the package's.
+        JsonObject paths = document["paths"]!.AsObject();
+        Assert.Contains("/api/agent/chats", paths.Select(p => p.Key));
+        Assert.DoesNotContain(paths.Select(p => p.Key), p => !p.StartsWith("/api/agent/", StringComparison.Ordinal));
+        Assert.Equal(AbpAgent.SampleHost.OpenApiDocument.Version, (string?)document["info"]!["version"]);
+
+        string text = document.ToJsonString(new JsonSerializerOptions { WriteIndented = true }).Replace("\r\n", "\n") + "\n";
+        string kept = Path.Combine(RepositoryRoot(), "docs", "openapi", "abpagent.json");
+        if (Environment.GetEnvironmentVariable("ABP_AGENT_UPDATE_OPENAPI") == "1")
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(kept)!);
+            await File.WriteAllTextAsync(kept, text);
+            return;
+        }
+
+        Assert.True(File.Exists(kept), "docs/openapi/abpagent.json is missing: run the host tests with ABP_AGENT_UPDATE_OPENAPI=1.");
+        string expected = (await File.ReadAllTextAsync(kept)).Replace("\r\n", "\n");
+        Assert.True(expected == text,
+            "docs/openapi/abpagent.json differs from the agents' API: run the host tests with ABP_AGENT_UPDATE_OPENAPI=1 and commit the change, "
+            + "then regenerate the screens' types from it.");
+    }
+
+    private static string RepositoryRoot()
+    {
+        DirectoryInfo? dir = new(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AbpAgent.slnx")))
+        {
+            dir = dir.Parent;
+        }
+
+        return dir?.FullName ?? throw new InvalidOperationException("AbpAgent.slnx not found above the test's folder.");
+    }
+
     [Fact]
     public async Task An_agent_works_a_ticket_under_its_own_name_with_the_askers_rights()
     {

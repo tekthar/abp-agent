@@ -11,6 +11,7 @@
     <ProjectReference Include="..\..\src\AbpAgent.HttpApi\AbpAgent.HttpApi.csproj" />
     <PackageReference Include="Volo.Abp.Autofac" Version="$(AbpVersion)" />
     <PackageReference Include="Volo.Abp.AspNetCore.Mvc" Version="$(AbpVersion)" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
   </ItemGroup>
 
 </Project>

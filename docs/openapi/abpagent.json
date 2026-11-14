@@ -1,0 +1,3153 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "AbpAgent API",
+    "description": "AbpAgent.HttpApi\u0027s actions under the default prefix (api/agent); a host serves them under its own. Errors are ABP\u0027s: { \u0022error\u0022: { \u0022code\u0022, \u0022message\u0022, \u0022details\u0022, \u0022validationErrors\u0022 } }.",
+    "version": "0.6.1"
+  },
+  "paths": {
+    "/api/agent/settings": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSwitch"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSwitch"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSwitch"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Agents"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSwitchInput"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSwitchInput"
+              }
+            },
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSwitchInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSwitch"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSwitch"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSwitch"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/agents": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentInfo"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentInfo"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChange"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChange"
+              }
+            },
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/agents/{id}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChange"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChange"
+              }
+            },
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/agents/{id}/pause": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/agents/{id}/resume": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/agents/{id}/usage": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentUsage"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentUsage"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentUsage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/agents/{id}/tools": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentTool"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentTool"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentTool"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/agents/{id}/memories": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentMemoryInfo"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentMemoryInfo"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentMemoryInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/agents/{id}/memories/{memoryId}": {
+      "delete": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "memoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/agent/agents/{id}/graph": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "find",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "thing",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentGraphPage"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentGraphPage"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentGraphPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/agents/{id}/permissions": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPermissionInfo"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPermissionInfo"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPermissionInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/scopes/{scope}/agents": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScopeAgentInfo"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScopeAgentInfo"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScopeAgentInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChange"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChange"
+              }
+            },
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/scopes/{scope}/agents/{id}/take": {
+      "put": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentTakeInput"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentTakeInput"
+              }
+            },
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentTakeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeAgentInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeAgentInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeAgentInfo"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/agent/items/{kind}/{key}/agents": {
+      "get": {
+        "tags": [
+          "AgentRuns"
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AskableAgent"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AskableAgent"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AskableAgent"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/items/{kind}/{key}/runs": {
+      "get": {
+        "tags": [
+          "AgentRuns"
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentRunInfo"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentRunInfo"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentRunInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "AgentRuns"
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAskInput"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAskInput"
+              }
+            },
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAskInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/runs/{id}": {
+      "get": {
+        "tags": [
+          "AgentRuns"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/runs/{id}/export": {
+      "get": {
+        "tags": [
+          "AgentRuns"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/agent/runs/{id}/stop": {
+      "post": {
+        "tags": [
+          "AgentRuns"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/questions": {
+      "get": {
+        "tags": [
+          "AgentRuns"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentQuestionInfo"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentQuestionInfo"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentQuestionInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/questions/{id}/answer": {
+      "post": {
+        "tags": [
+          "AgentRuns"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAnswerInput"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAnswerInput"
+              }
+            },
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAnswerInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/me/permissions": {
+      "get": {
+        "tags": [
+          "AgentRuns"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPermissionInfo"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPermissionInfo"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPermissionInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/permissions/remove": {
+      "post": {
+        "tags": [
+          "AgentRuns"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPermissionRemoveInput"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPermissionRemoveInput"
+              }
+            },
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPermissionRemoveInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/agent/chats/places": {
+      "get": {
+        "tags": [
+          "AgentChats"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentChatPlace"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentChatPlace"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentChatPlace"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/chats": {
+      "get": {
+        "tags": [
+          "AgentChats"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentChatSummary"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentChatSummary"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentChatSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "AgentChats"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChatStartInput"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChatStartInput"
+              }
+            },
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChatStartInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/chats/{id}": {
+      "get": {
+        "tags": [
+          "AgentChats"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatInfo"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "AgentChats"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/agent/chats/{id}/messages": {
+      "post": {
+        "tags": [
+          "AgentChats"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChatMessageInput"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChatMessageInput"
+              }
+            },
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChatMessageInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/chats/{id}/runs/{runId}/post": {
+      "post": {
+        "tags": [
+          "AgentChats"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/chats/{id}/events": {
+      "get": {
+        "tags": [
+          "AgentChats"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentAnswerInput": {
+        "required": [
+          "answer"
+        ],
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentAskInput": {
+        "required": [
+          "agentId",
+          "prompt"
+        ],
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "prompt": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "AgentChange": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "names": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "titles": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "instructions": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "modelAlias": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "responsibleId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "offerAll": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "offeredTo": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "roleKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "tools": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "transcriptDays": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "limits": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentRunLimits"
+              }
+            ]
+          },
+          "memory": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "AgentChatInfo": {
+        "required": [
+          "chat",
+          "runs",
+          "canSend",
+          "postable"
+        ],
+        "type": "object",
+        "properties": {
+          "chat": {
+            "$ref": "#/components/schemas/AgentChatSummary"
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentRunInfo"
+            }
+          },
+          "canSend": {
+            "type": "boolean"
+          },
+          "postable": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "AgentChatMessageInput": {
+        "required": [
+          "prompt"
+        ],
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentChatPlace": {
+        "required": [
+          "scope",
+          "agents"
+        ],
+        "type": "object",
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/AgentScopeRef"
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AskableAgent"
+            }
+          }
+        }
+      },
+      "AgentChatStartInput": {
+        "required": [
+          "agentId",
+          "prompt"
+        ],
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "scope": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "kind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "key": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "AgentChatSummary": {
+        "required": [
+          "id",
+          "agentId",
+          "agentKey",
+          "agent",
+          "scopeId",
+          "scopeKey",
+          "itemKind",
+          "itemKey",
+          "title",
+          "createdAt",
+          "lastAt",
+          "going"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentKey": {
+            "type": "string"
+          },
+          "agent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentPerson"
+              }
+            ]
+          },
+          "scopeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scopeKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "itemKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "itemKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "going": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AgentGraphLink": {
+        "required": [
+          "id",
+          "from",
+          "to",
+          "relation",
+          "fact",
+          "memories",
+          "validAt",
+          "invalidAt",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "fact": {
+            "type": "string"
+          },
+          "memories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "validAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "invalidAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentGraphNote": {
+        "required": [
+          "id",
+          "itemKind",
+          "itemKey",
+          "text",
+          "outside",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "itemKind": {
+            "type": "string"
+          },
+          "itemKey": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "outside": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentGraphPage": {
+        "required": [
+          "on",
+          "why",
+          "view",
+          "notes",
+          "waiting"
+        ],
+        "type": "object",
+        "properties": {
+          "on": {
+            "type": "boolean"
+          },
+          "why": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "view": {
+            "$ref": "#/components/schemas/AgentGraphView"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentGraphNote"
+            }
+          },
+          "waiting": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AgentGraphThing": {
+        "required": [
+          "id",
+          "name",
+          "summary",
+          "facts",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "facts": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentGraphView": {
+        "required": [
+          "things",
+          "thing",
+          "facts",
+          "around",
+          "hidden"
+        ],
+        "type": "object",
+        "properties": {
+          "things": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentGraphThing"
+            }
+          },
+          "thing": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentGraphThing"
+              }
+            ]
+          },
+          "facts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentGraphLink"
+            }
+          },
+          "around": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentGraphThing"
+            }
+          },
+          "hidden": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AgentInfo": {
+        "required": [
+          "id",
+          "key",
+          "account",
+          "scopeKey",
+          "names",
+          "titles",
+          "instructions",
+          "modelAlias",
+          "responsible",
+          "state",
+          "pausedAt",
+          "offerAll",
+          "offeredTo",
+          "scopes",
+          "templateKey",
+          "templateVersion",
+          "createdAt",
+          "updatedAt",
+          "tools",
+          "transcriptDays"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string"
+          },
+          "account": {
+            "$ref": "#/components/schemas/AgentPerson"
+          },
+          "scopeKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "names": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "titles": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "modelAlias": {
+            "type": "string"
+          },
+          "responsible": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentPerson"
+              }
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "pausedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "offerAll": {
+            "type": "boolean"
+          },
+          "offeredTo": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentScopeInfo"
+            }
+          },
+          "templateKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "templateVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tools": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "transcriptDays": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/AgentRunLimits"
+          },
+          "siteLimits": {
+            "$ref": "#/components/schemas/AgentRunLimits"
+          },
+          "memory": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AgentMemoryInfo": {
+        "required": [
+          "id",
+          "scopeKey",
+          "itemKind",
+          "itemKey",
+          "text",
+          "outside",
+          "rememberedBy",
+          "runId",
+          "createdAt",
+          "lastUsedAt",
+          "uses"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scopeKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "itemKind": {
+            "type": "string"
+          },
+          "itemKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "outside": {
+            "type": "boolean"
+          },
+          "rememberedBy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentPerson"
+              }
+            ]
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "uses": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AgentPermissionInfo": {
+        "required": [
+          "person",
+          "personId",
+          "agentId",
+          "agentKey",
+          "agent",
+          "tool",
+          "scopeId",
+          "scopeKey",
+          "createdAt",
+          "lastUsedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "person": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentPerson"
+              }
+            ]
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentKey": {
+            "type": "string"
+          },
+          "agent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentPerson"
+              }
+            ]
+          },
+          "tool": {
+            "type": "string"
+          },
+          "scopeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scopeKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUsedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentPermissionRemoveInput": {
+        "required": [
+          "personId",
+          "agentId",
+          "tool",
+          "scopeId"
+        ],
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "scopeId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "AgentPerson": {
+        "required": [
+          "id",
+          "username",
+          "displayName",
+          "isActive"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "picture": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "AgentQuestionInfo": {
+        "required": [
+          "id",
+          "runId",
+          "agentKey",
+          "agent",
+          "itemKind",
+          "itemKey",
+          "tool",
+          "target",
+          "input",
+          "why",
+          "askedOf",
+          "createdAt",
+          "expiresAt",
+          "canAnswer",
+          "canAlways"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentKey": {
+            "type": "string"
+          },
+          "agent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentPerson"
+              }
+            ]
+          },
+          "itemKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "itemKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "tool": {
+            "type": "string"
+          },
+          "target": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "input": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "why": {
+            "type": "string"
+          },
+          "askedOf": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentPerson"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "canAnswer": {
+            "type": "boolean"
+          },
+          "canAlways": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AgentRunInfo": {
+        "required": [
+          "id",
+          "agentId",
+          "agentKey",
+          "agent",
+          "itemKind",
+          "itemKey",
+          "trigger",
+          "startedBy",
+          "state",
+          "outside",
+          "wide",
+          "changeSetId",
+          "turns",
+          "toolCalls",
+          "cost",
+          "answer",
+          "error",
+          "createdAt",
+          "startedAt",
+          "endedAt",
+          "transcript",
+          "steps"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentKey": {
+            "type": "string"
+          },
+          "agent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentPerson"
+              }
+            ]
+          },
+          "itemKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "itemKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "startedBy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentPerson"
+              }
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "outside": {
+            "type": "boolean"
+          },
+          "wide": {
+            "type": "boolean"
+          },
+          "changeSetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "turns": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "toolCalls": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "cost": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "answer": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "startedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "transcript": {
+            "type": "boolean"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentRunStepInfo"
+            }
+          },
+          "question": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentQuestionInfo"
+              }
+            ]
+          },
+          "prompt": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "chatId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "errorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "postedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentRunLimits": {
+        "required": [
+          "maxTurns",
+          "maxToolCalls",
+          "maxMinutes",
+          "maxRunCost"
+        ],
+        "type": "object",
+        "properties": {
+          "maxTurns": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxToolCalls": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxMinutes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxRunCost": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "AgentRunStepInfo": {
+        "required": [
+          "number",
+          "kind",
+          "name",
+          "target",
+          "outcome",
+          "input",
+          "output",
+          "startedAt",
+          "endedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "number": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "target": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "input": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "output": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "allowed": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "writes": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AgentScopeInfo": {
+        "required": [
+          "scopeKey",
+          "roleKey",
+          "takenAt"
+        ],
+        "type": "object",
+        "properties": {
+          "scopeKey": {
+            "type": "string"
+          },
+          "roleKey": {
+            "type": "string"
+          },
+          "takenAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentScopeRef": {
+        "required": [
+          "id",
+          "key"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentSwitch": {
+        "required": [
+          "enabled",
+          "adminsMayEnable",
+          "safeMode"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "adminsMayEnable": {
+            "type": "boolean"
+          },
+          "safeMode": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AgentSwitchInput": {
+        "required": [
+          "enabled"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AgentTakeInput": {
+        "required": [
+          "roleKey"
+        ],
+        "type": "object",
+        "properties": {
+          "roleKey": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentTool": {
+        "required": [
+          "name",
+          "title",
+          "description",
+          "inputSchema",
+          "readsOnly",
+          "fromPlugin"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "inputSchema": {
+            "$ref": "#/components/schemas/JsonElement"
+          },
+          "readsOnly": {
+            "type": "boolean"
+          },
+          "fromPlugin": {
+            "type": "boolean"
+          },
+          "reach": {
+            "$ref": "#/components/schemas/AgentToolReach"
+          },
+          "itemKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "alwaysAsks": {
+            "type": "boolean"
+          },
+          "optIn": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AgentToolReach": {
+        "type": "integer",
+        "default": 0
+      },
+      "AgentUsage": {
+        "required": [
+          "today",
+          "month"
+        ],
+        "type": "object",
+        "properties": {
+          "today": {
+            "$ref": "#/components/schemas/AgentUsagePeriod"
+          },
+          "month": {
+            "$ref": "#/components/schemas/AgentUsagePeriod"
+          }
+        }
+      },
+      "AgentUsagePeriod": {
+        "required": [
+          "runs",
+          "failed",
+          "stopped",
+          "tokens",
+          "cost"
+        ],
+        "type": "object",
+        "properties": {
+          "runs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "failed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "stopped": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "tokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "cost": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "AskableAgent": {
+        "required": [
+          "id",
+          "key",
+          "account",
+          "names",
+          "titles"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string"
+          },
+          "account": {
+            "$ref": "#/components/schemas/AgentPerson"
+          },
+          "names": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "titles": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "JsonElement": {},
+      "ScopeAgentInfo": {
+        "required": [
+          "agent",
+          "own",
+          "roleKey"
+        ],
+        "type": "object",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentInfo"
+          },
+          "own": {
+            "type": "boolean"
+          },
+          "roleKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Agents"
+    },
+    {
+      "name": "AgentRuns"
+    },
+    {
+      "name": "AgentChats"
+    }
+  ]
+}

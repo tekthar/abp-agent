@@ -4,6 +4,12 @@ An opt-in package (`AbpAgent.HttpApi`, `AbpAgentHttpApiModule`) that serves AbpA
 host has the same agents' API and the same screens can use it (`@abpjs/agent`). A host that runs agents without an
 API (a worker) doesn't take it.
 
+## Its document
+
+`docs/openapi/abpagent.json` is the API's OpenAPI document under the default prefix: the sample host serves it at
+`/openapi/abpagent.json` (its own group, `AgentHttpApiOptions.OpenApiGroup`), and a host test fails when the kept copy
+differs (`ABP_AGENT_UPDATE_OPENAPI=1` writes it). Screens generate their types from it.
+
 ## What the host gives
 
 - **The route prefix:** `Agents:HttpApi:RoutePrefix`, `api/agent` by default. Every route below is under it.

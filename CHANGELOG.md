@@ -6,6 +6,11 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `docs/openapi/abpagent.json`: the HTTP API's OpenAPI document, which the sample serves at `/openapi/abpagent.json` and a
+  host test keeps current, for screens to generate their types from (`@abpjs/ui`'s agent area).
+
 ## [0.6.1] - 2026-11-14
 
 ### Added
