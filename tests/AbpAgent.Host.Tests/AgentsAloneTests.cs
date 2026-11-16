@@ -230,6 +230,39 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_chats_run_answered_through_the_package_API_goes_on()
+    {
+        // A chat's run starts on this server as soon as it's queued (ChatRunsStartHere), so the answer that queues it
+        // must be committed by then: the package's controllers leave each step's unit of work to the services, as a host's
+        // own controllers do.
+        Assert.True((await SendAsync(HttpMethod.Put, "/api/agent/settings", Admin, new { enabled = true })).GetProperty("enabled").GetBoolean());
+        JsonElement agent = await SendAsync(HttpMethod.Post, "/api/agent/agents", Admin, new
+        {
+            key = "asker", offerAll = true, instructions = """
+                demo: set_priority {"key":"$ticket","priority":"high"}
+                demo-answer: Raised.
+                """,
+        });
+        string id = agent.GetProperty("id").GetString()!;
+        await SendAsync(HttpMethod.Put, $"/api/agent/scopes/DESK/agents/{id}/take", Admin, new { roleKey = "helper" });
+        string ticket = await TicketAsync(Ben, "DESK", "Chatted");
+        JsonElement chat = await SendAsync(HttpMethod.Post, "/api/agent/chats", Ben, new { agentId = id, prompt = "Raise it", kind = "ticket", key = ticket });
+        JsonElement waiting = await WaitingAsync(chat.GetProperty("runs")[0]);
+        Assert.Equal("waiting", waiting.GetProperty("state").GetString());
+        string run = waiting.GetProperty("id").GetString()!;
+        JsonElement question = (await SendAsync(HttpMethod.Get, "/api/agent/questions", Ben)).EnumerateArray().Single(q => q.GetProperty("runId").GetString() == run);
+        await SendAsync(HttpMethod.Post, $"/api/agent/questions/{question.GetProperty("id").GetString()}/answer", Ben, new { answer = "allow" });
+        JsonElement done = await FinishedAsync(waiting);
+        Assert.Equal("done", done.GetProperty("state").GetString());
+        Assert.Equal("Raised.", done.GetProperty("answer").GetString());
+
+        // The sample's own queue picks up a queued run it finds, which would hide a run queued before its state was
+        // committed; a host whose queue doesn't look (a job per run) would leave it queued. So: no unit of work around them.
+        Assert.True(typeof(AbpAgent.HttpApi.AgentControllerBase).GetCustomAttributes(typeof(Volo.Abp.Uow.UnitOfWorkAttribute), true)
+            .Cast<Volo.Abp.Uow.UnitOfWorkAttribute>().Single().IsDisabled, "the package's controllers hold no unit of work");
+    }
+
+    [Fact]
     public async Task The_package_APIs_file_and_stream_routes_refuse_as_JSON_whatever_the_caller_accepts()
     {
         // A run's export answers a file and a chat's events a stream, so ABP would word a refusal there as JSON only for a

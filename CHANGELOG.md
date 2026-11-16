@@ -6,6 +6,15 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-16
+
+### Fixed
+
+- The HTTP API's controllers hold no unit of work around the services, which commit each step themselves, as a host's own
+  controllers do. Answering a chat's question through the API queued its run inside the request's transaction; the run,
+  started on this server at once, found its old state and did nothing, so with a host's queue that doesn't look for
+  queued runs (a job per run) it stayed queued.
+
 ## [0.6.2] - 2026-11-16
 
 ### Fixed

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp;
 using Volo.Abp.AspNetCore.Mvc;
+using Volo.Abp.Uow;
 
 namespace AbpAgent.HttpApi;
 
@@ -24,7 +25,12 @@ public sealed record AgentChatStartInput(Guid AgentId, string Prompt, string? Sc
 
 public sealed record AgentChatMessageInput(string Prompt);
 
-/// <summary>The package's controllers: who calls comes from the host (<see cref="IAgentHttpCaller"/>), and the services check what they may do.</summary>
+/// <summary>
+/// The package's controllers: who calls comes from the host (<see cref="IAgentHttpCaller"/>), and the services check what
+/// they may do. The services commit each step themselves (AgentsDb), so the controllers hold no unit of work around them:
+/// a run they queue may start on this server at once (a chat's), and must find its own state already committed.
+/// </summary>
+[UnitOfWork(IsDisabled = true)]
 [ApiExplorerSettings(IgnoreApi = false)] // in the host's OpenAPI document (ABP hides non-remote-service controllers otherwise)
 public abstract class AgentControllerBase : AbpControllerBase
 {
