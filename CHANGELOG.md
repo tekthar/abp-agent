@@ -6,6 +6,14 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-16
+
+### Fixed
+
+- The HTTP API answers a refusal as ABP's JSON error, with its status, on every action, whatever the caller accepts.
+  ABP's own filter did so for a file (a run's export) or a stream (a chat's events) only when the caller accepted
+  JSON, so a download (`Accept: */*`) or a script got a 500 where it should have got 403 or 404.
+
 ### Added
 
 - `docs/openapi/abpagent.json`: the HTTP API's OpenAPI document, which the sample serves at `/openapi/abpagent.json` and a

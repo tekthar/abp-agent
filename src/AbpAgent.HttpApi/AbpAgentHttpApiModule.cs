@@ -2,6 +2,8 @@ using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Volo.Abp.AspNetCore.Mvc.ExceptionHandling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -80,6 +82,16 @@ public class AbpAgentHttpApiModule : AbpModule
     }
 }
 
+/// <summary>
+/// ABP's error answer (its JSON, the status of the error's code) for every action of the package's, whatever the caller
+/// accepts. ABP's own filter words an error as JSON for an action that answers a file (a run's export) or a result of
+/// its own (a chat's events) only when the caller accepts JSON, so to a download or a script a refusal there was a 500.
+/// </summary>
+internal sealed class AgentExceptionFilter : AbpExceptionFilter
+{
+    protected override bool ShouldHandleException(ExceptionContext context) => true;
+}
+
 /// <summary>Puts the package's controllers under the host's prefix, and in its OpenAPI group when it names one.</summary>
 public sealed class AgentRouteConvention(AgentHttpApiOptions options) : IApplicationModelConvention
 {
@@ -96,6 +108,9 @@ public sealed class AgentRouteConvention(AgentHttpApiOptions options) : IApplica
                     selector.AttributeRouteModel.Template = prefix + template[AgentRoutes.DefaultPrefix.Length..];
                 }
             }
+
+            // ABP's error answer on every action of the package's, the file and the stream too (AgentExceptionFilter).
+            controller.Filters.Add(new AgentExceptionFilter());
 
             if (options.OpenApiGroup is { Length: > 0 } group)
             {

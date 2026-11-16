@@ -230,6 +230,31 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_package_APIs_file_and_stream_routes_refuse_as_JSON_whatever_the_caller_accepts()
+    {
+        // A run's export answers a file and a chat's events a stream, so ABP would word a refusal there as JSON only for a
+        // caller that accepts JSON; to a download (Accept */*) or a script, it was a 500.
+        foreach (string accept in new[] { "", "*/*", "text/event-stream" })
+        {
+            foreach (string path in new[] { $"/api/agent/runs/{Guid.NewGuid()}/export", $"/api/agent/chats/{Guid.NewGuid()}/events" })
+            {
+                using HttpRequestMessage request = new(HttpMethod.Get, path);
+                request.Headers.Add("X-Account", Ben);
+                if (accept.Length > 0)
+                {
+                    request.Headers.Add("Accept", accept);
+                }
+
+                HttpResponseMessage response = await _factory!.CreateClient().SendAsync(request);
+                Assert.True(response.StatusCode == System.Net.HttpStatusCode.NotFound, $"{path} with Accept '{accept}': {(int)response.StatusCode}");
+                Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+                using JsonDocument error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                Assert.True(error.RootElement.TryGetProperty("error", out _), $"{path}: ABP's error shape");
+            }
+        }
+    }
+
+    [Fact]
     public async Task The_package_API_is_under_the_hosts_prefix()
     {
         _factory = _root!.WithWebHostBuilder(host => host.UseSetting("Agents:HttpApi:RoutePrefix", "hq/agents"));

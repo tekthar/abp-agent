@@ -3,7 +3,7 @@
   "info": {
     "title": "AbpAgent API",
     "description": "AbpAgent.HttpApi\u0027s actions under the default prefix (api/agent); a host serves them under its own. Errors are ABP\u0027s: { \u0022error\u0022: { \u0022code\u0022, \u0022message\u0022, \u0022details\u0022, \u0022validationErrors\u0022 } }.",
-    "version": "0.6.1"
+    "version": "0.6.2"
   },
   "paths": {
     "/api/agent/settings": {

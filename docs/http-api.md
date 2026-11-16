@@ -22,7 +22,8 @@ differs (`ABP_AGENT_UPDATE_OPENAPI=1` writes it). Screens generate their types f
   set in code) runs on every action marked `[AgentSensitive]`: those that change agents or the site's switch, or hand
   out a run's data (its export). A host adds its step-up sign-in there, say.
 
-Refusals keep AbpAgent's codes: `AbpAgent:Forbidden` answers 403 and `AbpAgent:Conflict` 409. The services already check
+Refusals keep AbpAgent's codes: `AbpAgent:Forbidden` answers 403 and `AbpAgent:Conflict` 409, as ABP's JSON error on
+every route, a run's export and a chat's events too, whatever the caller accepts. The services already check
 who may do what (an agent's admins, the run's person, rights on items), so the controllers only map requests to them.
 Switching agents on and making a site agent are for site admins (`IAgentRights.IsSiteAdminAsync`).
 
