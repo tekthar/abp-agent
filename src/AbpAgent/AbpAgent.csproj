@@ -13,8 +13,8 @@
   <ItemGroup>
     <PackageReference Include="Volo.Abp.EntityFrameworkCore.PostgreSql" Version="$(AbpVersion)" />
     <!-- EF Core as the design-time tools build against (10.0.12), as the design-time tools pin it. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
-    <PackageReference Include="Markdig" Version="1.4.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.15" />
+    <PackageReference Include="Markdig" Version="1.6.0" />
   </ItemGroup>
 
 </Project>
