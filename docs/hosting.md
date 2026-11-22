@@ -25,7 +25,7 @@ Each seam is an interface in `AbpAgent.Contracts`. Register yours in your module
 |---|---|
 | `AgentService` | agents: list, get, make (site or scope), change, pause, take on and off, the switch |
 | `AgentRunService` | runs: ask, start for a trigger (`StartAsync`), get (as the reader may see it), an item's runs, stop, ready to undo; questions: a person's open ones, answer, expire |
-| `AgentPermissionService` | standing permissions: a person's own (`MineAsync`), an agent's (`ForAgentAsync`, for whoever administers it), and taking one back (`RemoveAsync`, the person or the agent's administrators) |
+| `AgentPermissionService` | standing permissions: a person's own (`MineAsync`), an agent's (`ForAgentAsync`, for whoever administers it), what a person may allow ahead of time (`AllowableAsync`) and allowing it (`GiveAsync`), and taking one or an agent's every one in a scope back (`RemoveAsync`, the person or the agent's administrators) |
 | `AgentRunner` | one turn of a run (`TurnAsync`), for your own queue; `FailAsync` when your queue gives up on one |
 
 ## Starting runs

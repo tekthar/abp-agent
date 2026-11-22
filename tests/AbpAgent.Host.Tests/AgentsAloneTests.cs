@@ -759,6 +759,57 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_person_allows_an_agent_ahead_of_time_only_what_always_could_and_takes_the_whole_row_back()
+    {
+        // set_priority asks by its setting and keep_scratch by default: both may be allowed. add_note already runs, and
+        // email_customer is a plugin's, which may send: neither is offered.
+        string agent = await SetUpAgentAsync("ahead", """
+            demo: set_priority {"key":"$ticket","priority":"high"}
+            demo-answer: Raised.
+            """, tools: new { set_priority = "ask", add_note = "run", email_customer = "ask" });
+        JsonElement place = (await SendAsync(HttpMethod.Get, "/api/agent/me/permissions/allowable", Ben)).EnumerateArray()
+            .Single(p => p.GetProperty("scope").GetProperty("key").GetString() == "DESK");
+        string scope = place.GetProperty("scope").GetProperty("id").GetString()!;
+        JsonElement able = place.GetProperty("agents").EnumerateArray().Single(a => a.GetProperty("agent").GetProperty("id").GetString() == agent);
+        Assert.Equal(["keep_scratch", "set_priority"], able.GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()).Order());
+        Assert.All(able.GetProperty("tools").EnumerateArray(), t => Assert.False(t.GetProperty("given").GetBoolean()));
+
+        // What isn't offered is refused, and nothing is given.
+        Assert.False((await RawAsync(HttpMethod.Post, "/api/agent/me/permissions", Ben, new { agentId = agent, scopeId = scope, tools = new[] { "set_priority", "add_note" } }))
+            .IsSuccessStatusCode);
+        Assert.False((await RawAsync(HttpMethod.Post, "/api/agent/me/permissions", Ben, new { agentId = agent, scopeId = scope, tools = new[] { "email_customer" } }))
+            .IsSuccessStatusCode);
+        Assert.Equal(0, (await SendAsync(HttpMethod.Get, "/api/agent/me/permissions", Ben)).GetArrayLength());
+
+        JsonElement mine = await SendAsync(HttpMethod.Post, "/api/agent/me/permissions", Ben, new { agentId = agent, scopeId = scope, tools = new[] { "set_priority", "keep_scratch" } });
+        Assert.Equal(["keep_scratch", "set_priority"], mine.EnumerateArray().Select(p => p.GetProperty("tool").GetString()).Order());
+        JsonElement priority = mine.EnumerateArray().Single(p => p.GetProperty("tool").GetString() == "set_priority");
+        Assert.Equal("Set a ticket's priority", priority.GetProperty("toolTitle").GetString());
+        Assert.Equal(Admin, priority.GetProperty("madeBy").GetProperty("id").GetString());
+        Assert.Equal(JsonValueKind.Object, priority.GetProperty("agentNames").ValueKind);
+        Assert.All((await SendAsync(HttpMethod.Get, "/api/agent/me/permissions/allowable", Ben)).EnumerateArray()
+            .Single(p => p.GetProperty("scope").GetProperty("id").GetString() == scope).GetProperty("agents").EnumerateArray()
+            .Single(a => a.GetProperty("agent").GetProperty("id").GetString() == agent).GetProperty("tools").EnumerateArray(), t => Assert.True(t.GetProperty("given").GetBoolean()));
+
+        // Ben's run changes the priority without asking, and the step says whose permission let it; Cy's still asks.
+        string ticket = await TicketAsync(Ben, "DESK", "Ahead");
+        JsonElement run = await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/agent/items/ticket/{ticket}/runs", Ben, new { agentId = agent, prompt = "Raise it" }));
+        Assert.Equal("done", run.GetProperty("state").GetString());
+        Assert.Equal($"always:{Ben}", ToolSteps(run)[0].GetProperty("allowed").GetString());
+        string other = await TicketAsync(Cy, "DESK", "Not mine");
+        JsonElement asks = await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/agent/items/ticket/{other}/runs", Cy, new { agentId = agent, prompt = "Raise it" }));
+        Assert.Equal("waiting", asks.GetProperty("state").GetString());
+        await SendAsync(HttpMethod.Post, $"/api/agent/runs/{asks.GetProperty("id").GetString()}/stop", Cy);
+
+        // With no tool, taking back removes the agent's whole row in that desk; there's nothing left to take back after.
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, (await RawAsync(HttpMethod.Post, "/api/agent/permissions/remove", Ben, new { personId = Ben, agentId = agent, scopeId = scope }))
+            .StatusCode);
+        Assert.Equal(0, (await SendAsync(HttpMethod.Get, "/api/agent/me/permissions", Ben)).GetArrayLength());
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await RawAsync(HttpMethod.Post, "/api/agent/permissions/remove", Ben, new { personId = Ben, agentId = agent, scopeId = scope }))
+            .StatusCode);
+    }
+
+    [Fact]
     public async Task Always_allow_in_a_run_the_system_started_is_the_agents_setting_for_whoever_may_change_it()
     {
         string agent = await SetUpAgentAsync("nightly", """

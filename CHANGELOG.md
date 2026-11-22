@@ -6,6 +6,21 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Allowing an agent ahead of time: `AgentPermissionService.AllowableAsync` lists, by scope, the agents a person may
+  chat with there and the tools "Always" could answer for them (the host's own that change things and ask first by
+  the agent's settings, not a plugin's nor one that asks every time), and `GiveAsync` gives those as standing
+  permissions; over HTTP, `GET me/permissions/allowable` and `POST me/permissions` (a sensitive action). A run that
+  read outside content or beyond its scope still asks.
+- A standing permission says its tool's title (`AgentPermissionInfo.ToolTitle`), who made the agent (`MadeBy`) and the
+  agent's name by language (`AgentNames`).
+
+### Changed
+
+- Taking a standing permission back with no tool (`RemoveAsync`, `POST permissions/remove` without `tool`) takes back
+  every one the person gave the agent in the scope, each audited as before.
+
 ## [0.6.3] - 2026-11-16
 
 ### Fixed

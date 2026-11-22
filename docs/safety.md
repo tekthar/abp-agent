@@ -48,8 +48,12 @@ A write that may not run without a person makes the run ask, and wait (`waiting`
 ## Standing permissions
 
 An `always` answer is a standing permission: this person's runs of this agent may run this tool in this scope without
-asking. People can see what they gave and take it back (`AgentPermissionService.MineAsync`, `RemoveAsync`), and so can
-whoever administers the agent (`ForAgentAsync`). Giving and taking one back are audited, taking an agent off a scope
+asking. A person may also give one ahead of time, for what `always` could have answered: in a scope where they may chat
+with the agent, one of the host's own tools that changes things and asks first by the agent's settings, not a plugin's
+nor one that asks every time (`AllowableAsync`, `GiveAsync`). Either way it never lets a run that read outside content
+or beyond its scope change things without asking. People can see what they gave and take it back, one tool or all of an
+agent's in a scope (`AgentPermissionService.MineAsync`, `RemoveAsync`), and so can whoever administers the agent
+(`ForAgentAsync`). Giving and taking one back are audited, taking an agent off a scope
 removes the ones given there, and each permission says when it last let a call through (`LastUsedAt`).
 
 A step that changes things says what let it run without asking (`AgentRunStep.Allowed`, `AgentAllowances`): the

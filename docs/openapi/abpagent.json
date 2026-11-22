@@ -1262,6 +1262,100 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "AgentRuns"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPermissionGive"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPermissionGive"
+              }
+            },
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPermissionGive"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPermissionInfo"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPermissionInfo"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPermissionInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/me/permissions/allowable": {
+      "get": {
+        "tags": [
+          "AgentRuns"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentAllowablePlace"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentAllowablePlace"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentAllowablePlace"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/agent/permissions/remove": {
@@ -1627,6 +1721,61 @@
   },
   "components": {
     "schemas": {
+      "AgentAllowableAgent": {
+        "required": [
+          "agent",
+          "tools"
+        ],
+        "type": "object",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AskableAgent"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentAllowableTool"
+            }
+          }
+        }
+      },
+      "AgentAllowablePlace": {
+        "required": [
+          "scope",
+          "agents"
+        ],
+        "type": "object",
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/AgentScopeRef"
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentAllowableAgent"
+            }
+          }
+        }
+      },
+      "AgentAllowableTool": {
+        "required": [
+          "name",
+          "title",
+          "given"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "given": {
+            "type": "boolean"
+          }
+        }
+      },
       "AgentAnswerInput": {
         "required": [
           "answer"
@@ -2353,6 +2502,30 @@
           }
         }
       },
+      "AgentPermissionGive": {
+        "required": [
+          "agentId",
+          "scopeId",
+          "tools"
+        ],
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scopeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "AgentPermissionInfo": {
         "required": [
           "person",
@@ -2422,6 +2595,28 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "toolTitle": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "madeBy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentPerson"
+              }
+            ]
+          },
+          "agentNames": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         }
       },
@@ -2443,7 +2638,10 @@
             "format": "uuid"
           },
           "tool": {
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "scopeId": {
             "type": "string",

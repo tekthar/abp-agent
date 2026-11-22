@@ -18,7 +18,8 @@ public sealed record AgentAskInput(Guid AgentId, string? Prompt);
 
 public sealed record AgentAnswerInput(string Answer);
 
-public sealed record AgentPermissionRemoveInput(Guid PersonId, Guid AgentId, string Tool, Guid ScopeId);
+/// <summary>A standing permission to take back; with no <see cref="Tool"/>, every one the person gave the agent in the scope.</summary>
+public sealed record AgentPermissionRemoveInput(Guid PersonId, Guid AgentId, string? Tool, Guid ScopeId);
 
 /// <summary>A new chat: in a scope (<see cref="Scope"/>), or about an item (<see cref="Kind"/> and <see cref="Key"/>).</summary>
 public sealed record AgentChatStartInput(Guid AgentId, string Prompt, string? Scope = null, string? Kind = null, string? Key = null);
@@ -169,6 +170,15 @@ public class AgentRunsController(AgentRunService runs, AgentPermissionService pe
 
     [HttpGet("me/permissions")]
     public async Task<List<AgentPermissionInfo>> MyPermissions(CancellationToken ct) => await permissions.MineAsync(await CallerAsync(ct), ct);
+
+    /// <summary>What the caller may allow agents ahead of time: by scope, each agent's tools that ask first.</summary>
+    [HttpGet("me/permissions/allowable")]
+    public async Task<List<AgentAllowablePlace>> Allowable(CancellationToken ct) => await permissions.AllowableAsync(await CallerAsync(ct), ct);
+
+    /// <summary>Allows an agent tools ahead of time, in the caller's own runs in one scope; returns their standing permissions.</summary>
+    [HttpPost("me/permissions"), AgentSensitive]
+    public async Task<List<AgentPermissionInfo>> GivePermissions([FromBody] AgentPermissionGive input, CancellationToken ct) =>
+        await permissions.GiveAsync(await CallerAsync(ct), input, ct);
 
     [HttpPost("permissions/remove"), AgentSensitive]
     public async Task<NoContentResult> RemovePermission([FromBody] AgentPermissionRemoveInput input, CancellationToken ct)

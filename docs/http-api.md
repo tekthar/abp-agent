@@ -48,7 +48,8 @@ Switching agents on and making a site agent are for site admins (`IAgentRights.I
 | `GET runs/{id}/export` | The same as a JSON file, to dig into what went wrong |
 | `POST runs/{id}/stop` | Stops it |
 | `GET questions`, `POST questions/{id}/answer` | The questions runs wait for me to answer; an answer (`allow`, `allow-run`, `always`, `refuse`) |
-| `GET me/permissions`, `POST permissions/remove` | My standing permissions; taking one back |
+| `GET me/permissions`, `POST permissions/remove` | My standing permissions; taking one back (`tool`), or with no `tool` every one I gave the agent in the scope |
+| `GET me/permissions/allowable`, `POST me/permissions` | What I may allow agents ahead of time, by scope; allowing an agent tools there (`agentId`, `scopeId`, `tools`) |
 | `GET chats/places` | Where I may chat, with the agents there |
 | `GET chats`, `POST chats` | My chats; a new one (`agentId`, `prompt`, `scope`, or `kind` and `key`) |
 | `GET chats/{id}`, `DELETE chats/{id}` | A chat with its runs; deleting it |
