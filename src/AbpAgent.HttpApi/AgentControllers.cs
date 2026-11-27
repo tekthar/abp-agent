@@ -188,6 +188,15 @@ public class AgentRunsController(AgentRunService runs, AgentPermissionService pe
     }
 }
 
+/// <summary>What a site admin does about someone's agents' data (docs/http-api.md).</summary>
+[Route(AgentRoutes.DefaultPrefix + "/people")]
+public class AgentPeopleController(AgentChatService chats) : AgentControllerBase
+{
+    /// <summary>Deletes every chat of someone's (an account a site admin deactivates or deletes); audited.</summary>
+    [HttpDelete("{personId:guid}/chats"), AgentSensitive]
+    public async Task<AgentChatsDeleted> DeleteChats(Guid personId, CancellationToken ct) => await chats.DeleteAllForAsync(await CallerAsync(ct), personId, ct);
+}
+
 /// <summary>A person's own chats with agents, and their live events (docs/http-api.md).</summary>
 [Route(AgentRoutes.DefaultPrefix + "/chats")]
 public class AgentChatsController(AgentChatService chats) : AgentControllerBase
@@ -218,6 +227,10 @@ public class AgentChatsController(AgentChatService chats) : AgentControllerBase
         await chats.DeleteAsync(await CallerAsync(ct), id, ct);
         return NoContent();
     }
+
+    /// <summary>Deletes every chat of the caller's at once; a chat whose run is in the middle of a step waits (<c>stillGoing</c>).</summary>
+    [HttpDelete]
+    public async Task<AgentChatsDeleted> DeleteAll(CancellationToken ct) => await chats.DeleteAllAsync(await CallerAsync(ct), ct);
 
     /// <summary>
     /// The chat's events as server-sent events while a run of it goes, each with its id: a reader that drops comes back

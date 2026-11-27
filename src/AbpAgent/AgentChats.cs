@@ -8,6 +8,9 @@ namespace AbpAgent;
 /// <summary>A scope where someone may chat, with the agents it took on that aren't paused.</summary>
 public sealed record AgentChatPlace(AgentScopeRef Scope, List<AskableAgent> Agents);
 
+/// <summary>Deleting all of a person's chats: how many went, and how many wait for their run's step to end (delete again then).</summary>
+public sealed record AgentChatsDeleted(int Deleted, int StillGoing);
+
 /// <summary>A chat in its person's list: with whom, where, about what, its title, and whether a run of it is going.</summary>
 public sealed record AgentChatSummary(Guid Id, Guid AgentId, string AgentKey, AgentPerson? Agent, Guid ScopeId, string? ScopeKey, string? ItemKind, string? ItemKey,
     string Title, DateTime CreatedAt, DateTime LastAt, bool Going);
@@ -229,6 +232,63 @@ public sealed class AgentChatService(AgentsDb agentsDb, AgentService agents, Age
         }
 
         return await GetAsync(actor, chat.Id, ct);
+    }
+
+    /// <summary>
+    /// Deletes every chat of the actor's at once (a person taking their words with them): as <see cref="DeleteAsync"/> does
+    /// one, after stopping its runs that are going. A chat whose run is in the middle of a step stays until that step
+    /// ends (<see cref="AgentChatsDeleted.StillGoing"/>): delete again then.
+    /// </summary>
+    public Task<AgentChatsDeleted> DeleteAllAsync(AgentActor actor, CancellationToken ct) => ForgetPersonAsync(actor.Id, ct);
+
+    /// <summary>
+    /// A site admin deletes every chat of someone's (an account they're deactivating or deleting), as <see cref="DeleteAllAsync"/>
+    /// does; audited (<see cref="AgentAuditTypes.ChatsDeleted"/>). Refused for anyone else.
+    /// </summary>
+    public async Task<AgentChatsDeleted> DeleteAllForAsync(AgentActor actor, Guid personId, CancellationToken ct)
+    {
+        if (!await services.GetRequiredService<IAgentRights>().IsSiteAdminAsync(actor, ct))
+        {
+            throw new UserFriendlyException("Only a site admin deletes someone else's chats.", AgentErrorCodes.Forbidden);
+        }
+
+        AgentChatsDeleted done = await ForgetPersonAsync(personId, ct);
+        if (done.Deleted + done.StillGoing > 0)
+        {
+            string name = (await accounts.GetManyAsync([personId], ct)).GetValueOrDefault(personId)?.Username ?? personId.ToString("N");
+            await services.GetRequiredService<IAgentAudit>().WriteAsync(AgentAuditTypes.ChatsDeleted, "Account", personId, name,
+                new { deleted = done.Deleted, stillGoing = done.StillGoing, by = actor.Id }, ct);
+        }
+
+        return done;
+    }
+
+    /// <summary>
+    /// For the host: every chat of the person goes, as deleting one does (its runs keep who, when and each step's outcome,
+    /// and lose their messages, replies and transcripts). Their runs that are going stop first; a chat whose run is in the
+    /// middle of a step stays until it ends and is counted in <see cref="AgentChatsDeleted.StillGoing"/>. Calling it again
+    /// is harmless.
+    /// </summary>
+    public async Task<AgentChatsDeleted> ForgetPersonAsync(Guid personId, CancellationToken ct)
+    {
+        List<Guid> going = await agentsDb.RunAsync(db => db.AgentRuns.Where(r => r.ChatId != null
+                && db.AgentChats.Any(c => c.Id == r.ChatId && c.PersonId == personId)
+                && (r.State == AgentRunStates.Queued || r.State == AgentRunStates.Running || r.State == AgentRunStates.Waiting))
+            .Select(r => r.Id).ToListAsync(ct), requiresNew: true, cancellationToken: ct);
+        if (going.Count > 0)
+        {
+            await runs.StopAllAsync(going, "Stopped: its chat was deleted.", ct);
+        }
+
+        return await agentsDb.RunAsync(async db =>
+        {
+            IQueryable<AgentChat> theirs = db.AgentChats.Where(c => c.PersonId == personId);
+            IQueryable<AgentChat> free = theirs.Where(c => !db.AgentRuns.Any(r => r.ChatId == c.Id && r.State == AgentRunStates.Running));
+            int all = await theirs.CountAsync(ct);
+            int deleted = await free.CountAsync(ct);
+            await ForgetAsync(db, free, ct);
+            return new AgentChatsDeleted(deleted, all - deleted);
+        }, requiresNew: true, isTransactional: true, cancellationToken: ct);
     }
 
     /// <summary>

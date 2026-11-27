@@ -543,6 +543,41 @@ public sealed class AgentRunService(AgentsDb agentsDb, AgentService agents, Agen
     }
 
     /// <summary>
+    /// Stops these runs with no check of who may (their chats are being deleted): queued and waiting ones at once, as
+    /// <see cref="StopAsync"/> does, their open questions closed; a running one is told to stop after its current step.
+    /// Returns how many were still running.
+    /// </summary>
+    internal async Task<int> StopAllAsync(IReadOnlyCollection<Guid> ids, string why, CancellationToken ct)
+    {
+        (List<Guid> ended, int running) = await agentsDb.RunAsync(async db =>
+        {
+            List<AgentRun> going = await db.AgentRuns.Where(r => ids.Contains(r.Id)
+                && (r.State == AgentRunStates.Queued || r.State == AgentRunStates.Running || r.State == AgentRunStates.Waiting)).ToListAsync(ct);
+            List<Guid> now = [];
+            foreach (AgentRun run in going)
+            {
+                run.StopRequested = true;
+                if (run.State is AgentRunStates.Queued or AgentRunStates.Waiting)
+                {
+                    (run.State, run.Error, run.EndedAt) = (AgentRunStates.Stopped, why, DateTime.UtcNow);
+                    now.Add(run.Id);
+                }
+            }
+
+            await db.AgentQuestions.Where(q => now.Contains(q.RunId) && q.State == AgentQuestionStates.Open)
+                .ExecuteUpdateAsync(u => u.SetProperty(q => q.State, AgentQuestionStates.Closed), ct);
+            await db.SaveChangesAsync(ct);
+            return (now, going.Count - now.Count);
+        }, requiresNew: true, cancellationToken: ct);
+        foreach (Guid id in ended)
+        {
+            await line.EndedAsync(id, ct);
+        }
+
+        return running;
+    }
+
+    /// <summary>
     /// Before "Undo this run": a run still going is asked to stop and the undo refused until it has, so its change set
     /// is whole when it's taken back. The host undoes the change set.
     /// </summary>

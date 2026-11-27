@@ -53,6 +53,8 @@ Switching agents on and making a site agent are for site admins (`IAgentRights.I
 | `GET chats/places` | Where I may chat, with the agents there |
 | `GET chats`, `POST chats` | My chats; a new one (`agentId`, `prompt`, `scope`, or `kind` and `key`) |
 | `GET chats/{id}`, `DELETE chats/{id}` | A chat with its runs; deleting it |
+| `DELETE chats` | Deleting all my chats at once (`deleted`, and `stillGoing` for chats whose run is mid-step) |
+| `DELETE people/{personId}/chats` | A site admin deletes all of someone's chats (an account deactivated or deleted); sensitive, audited |
 | `POST chats/{id}/messages` | The next message (`prompt`) |
 | `POST chats/{id}/runs/{runId}/post` | Posts a reply where its item's people see it |
 | `GET chats/{id}/events` | Server-sent events while a run goes: `turn`, `text`, `step`, `question`, `run`, `ping`, each with its id; `Last-Event-ID` resumes |

@@ -915,6 +915,58 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_person_deletes_all_their_chats_at_once_and_a_site_admin_someones_with_their_going_runs_stopped_first()
+    {
+        Assert.True((await SendAsync(HttpMethod.Put, "/api/agent/settings", Admin, new { enabled = true })).GetProperty("enabled").GetBoolean());
+        string chatter = (await SendAsync(HttpMethod.Post, "/api/agent/agents", Admin, new { key = "chatter", offerAll = true, instructions = "demo-answer: Hello $turn." }))
+            .GetProperty("id").GetString()!;
+        string asker = (await SendAsync(HttpMethod.Post, "/api/agent/agents", Admin, new
+        {
+            key = "asker", offerAll = true, tools = new { set_priority = "ask" }, instructions = """
+                demo: set_priority {"key":"$ticket","priority":"high"}
+                demo-answer: Raised.
+                """,
+        })).GetProperty("id").GetString()!;
+        foreach (string agent in new[] { chatter, asker })
+        {
+            await SendAsync(HttpMethod.Put, $"/api/agent/scopes/DESK/agents/{agent}/take", Admin, new { roleKey = "helper" });
+        }
+
+        // Ben's two chats, one of them waiting on its question; Cy's one.
+        string ticket = await TicketAsync(Ben, "DESK", "Chats");
+        await FinishedAsync((await SendAsync(HttpMethod.Post, "/api/agent/chats", Ben, new { agentId = chatter, prompt = "Hi", scope = "DESK" })).GetProperty("runs")[0]);
+        string waiting = (await WaitingAsync((await SendAsync(HttpMethod.Post, "/api/agent/chats", Ben, new { agentId = asker, prompt = "Raise it", kind = "ticket", key = ticket }))
+            .GetProperty("runs")[0])).GetProperty("id").GetString()!;
+        Assert.Equal("waiting", (await SendAsync(HttpMethod.Get, $"/api/agent/runs/{waiting}", Ben)).GetProperty("state").GetString());
+        string cysChat = (await SendAsync(HttpMethod.Post, "/api/agent/chats", Cy, new { agentId = chatter, prompt = "Hi", scope = "DESK" })).GetProperty("chat").GetProperty("id")
+            .GetString()!;
+        for (int i = 0; (await SendAsync(HttpMethod.Get, $"/api/agent/chats/{cysChat}", Cy)).GetProperty("runs")[0].GetProperty("state").GetString() is not "done"; i++)
+        {
+            Assert.True(i < 150, "Cy's chat didn't answer.");
+            await Task.Delay(200);
+        }
+
+        // Only a site admin deletes someone else's.
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, (await RawAsync(HttpMethod.Delete, $"/api/agent/people/{Ben}/chats", Cy)).StatusCode);
+
+        // Ben deletes all of his: the waiting run stops first and its question closes; the run keeps who and when.
+        JsonElement mine = await SendAsync(HttpMethod.Delete, "/api/agent/chats", Ben);
+        Assert.Equal((2, 0), (mine.GetProperty("deleted").GetInt32(), mine.GetProperty("stillGoing").GetInt32()));
+        Assert.Equal(0, (await SendAsync(HttpMethod.Get, "/api/agent/chats", Ben)).GetArrayLength());
+        JsonElement stopped = await SendAsync(HttpMethod.Get, $"/api/agent/runs/{waiting}", Ben);
+        Assert.Equal("stopped", stopped.GetProperty("state").GetString());
+        Assert.DoesNotContain((await SendAsync(HttpMethod.Get, "/api/agent/questions", Ben)).EnumerateArray(), q => q.GetProperty("runId").GetString() == waiting);
+        Assert.Equal(1, (await SendAsync(HttpMethod.Get, "/api/agent/chats", Cy)).GetArrayLength());
+
+        // A site admin deletes Cy's; again, there's nothing left.
+        JsonElement cys = await SendAsync(HttpMethod.Delete, $"/api/agent/people/{Cy}/chats", Admin);
+        Assert.Equal(1, cys.GetProperty("deleted").GetInt32());
+        Assert.Equal(0, (await SendAsync(HttpMethod.Get, "/api/agent/chats", Cy)).GetArrayLength());
+        Assert.Equal(0, (await SendAsync(HttpMethod.Delete, $"/api/agent/people/{Cy}/chats", Admin)).GetProperty("deleted").GetInt32());
+        Assert.Equal(0, (await SendAsync(HttpMethod.Delete, "/api/agent/chats", Ben)).GetProperty("deleted").GetInt32());
+    }
+
+    [Fact]
     public async Task Always_allow_in_a_run_the_system_started_is_the_agents_setting_for_whoever_may_change_it()
     {
         string agent = await SetUpAgentAsync("nightly", """

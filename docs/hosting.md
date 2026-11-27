@@ -99,7 +99,10 @@ the chat so far as the model's own turns (the newest 20 exchanges within 60,000 
 chat's earlier runs were. Its reply stays in the chat: the package doesn't post it on the item, hides it from everyone
 but the person (and your site admins, who read transcripts), and leaves chat runs off the item's run list until they
 change something there. `PostAsync` posts one reply, once, through your item kind's `AnswerAsync`; `DeleteAsync` and
-the static `ForgetAsync` (for erasing a person) leave runs who, when and each step's outcome. Your host maps
+the static `ForgetAsync` (for erasing a person) leave runs who, when and each step's outcome. A person deletes all of
+theirs at once with `DeleteAllAsync`, a site admin someone's with `DeleteAllForAsync` (audited `agent.chats-deleted`;
+offer it where an account is deactivated or deleted without being erased), and your host with `ForgetPersonAsync`:
+their going runs stop first, and a chat whose run is mid-step waits for it (`AgentChatsDeleted.StillGoing`). Your host maps
 `agents.agent_chats` (`IAgentsDbContext.AgentChats`) and gives the routes; the sample host's `agent-chats` routes and
 its two chat tests show the whole of it. You'll want to skip your own "run finished" event for `AgentTriggers.Chat`, so
 no rule acts on what someone asked in private.

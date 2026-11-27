@@ -6,6 +6,16 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-27
+
+### Added
+
+- Deleting all of a person's chats at once, as deleting one does (their runs keep who, when and each step's outcome):
+  `AgentChatService.DeleteAllAsync` for the person (`DELETE chats`), `DeleteAllForAsync` for a site admin about someone
+  else (`DELETE people/{personId}/chats`, sensitive, audited `agent.chats-deleted`), for an account deactivated or
+  deleted without being erased, and `ForgetPersonAsync` for the host. Their going runs stop first, their questions
+  closed; a chat whose run is in the middle of a step waits for it (`AgentChatsDeleted.StillGoing`).
+
 ## [0.8.0] - 2026-11-27
 
 ### Added

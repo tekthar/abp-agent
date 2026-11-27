@@ -171,6 +171,9 @@ public static class AgentAuditTypes
 
     /// <summary>A scope was deleted for good, and what agents kept of it went (<see cref="AgentScopeForgetting"/>).</summary>
     public const string ScopeForgotten = "agent.scope-forgotten";
+
+    /// <summary>A site admin deleted every chat of someone's (<see cref="AgentChatService.DeleteAllForAsync"/>).</summary>
+    public const string ChatsDeleted = "agent.chats-deleted";
 }
 
 /// <summary>What an agent's settings say of a tool: it runs, it asks first, or it's off.</summary>
