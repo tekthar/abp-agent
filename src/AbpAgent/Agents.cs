@@ -168,6 +168,9 @@ public static class AgentAuditTypes
 
     /// <summary>A standing permission was taken back, by its person or the agent's admins.</summary>
     public const string PermissionRemoved = "agent.permission-removed";
+
+    /// <summary>A scope was deleted for good, and what agents kept of it went (<see cref="AgentScopeForgetting"/>).</summary>
+    public const string ScopeForgotten = "agent.scope-forgotten";
 }
 
 /// <summary>What an agent's settings say of a tool: it runs, it asks first, or it's off.</summary>

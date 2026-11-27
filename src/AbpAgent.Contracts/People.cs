@@ -64,6 +64,13 @@ public interface IAgentAccounts
     /// </summary>
     Task SetPictureAsync(Guid accountId, string? picture, CancellationToken cancellationToken) =>
         Task.FromException(new NotSupportedException("This host's accounts have no pictures."));
+
+    /// <summary>
+    /// An agent's account whose agent is gone (its scope was deleted for good): the host turns it off for good, keeping it
+    /// so history still names it. Called again for an account already retired, it changes nothing. The default leaves the
+    /// account as it is: it never signs in and holds no tokens.
+    /// </summary>
+    Task RetireAsync(Guid accountId, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 /// <summary>Who may administer what. The default: nobody but those the host calls site admins, and no scopes.</summary>

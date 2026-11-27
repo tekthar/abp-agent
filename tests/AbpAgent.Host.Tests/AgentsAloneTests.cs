@@ -810,6 +810,111 @@ public sealed class AgentsAloneTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_scope_deleted_for_good_lets_go_of_everything_agents_kept_there_and_nothing_elsewhere()
+    {
+        // A site agent offered to DESK and OPS by name and taken on by both, its set_priority asking first; DESK's own agent,
+        // which keeps a note about a ticket in its run and in Ben's chat about it.
+        Assert.True((await SendAsync(HttpMethod.Put, "/api/agent/settings", Admin, new { enabled = true })).GetProperty("enabled").GetBoolean());
+        string site = (await SendAsync(HttpMethod.Post, "/api/agent/agents", Admin, new
+        {
+            key = "sitewide", offerAll = false, offeredTo = new[] { "DESK", "OPS" }, tools = new { set_priority = "ask" }, instructions = """
+                demo: set_priority {"key":"$ticket","priority":"high"}
+                demo-answer: Raised.
+                """,
+        })).GetProperty("id").GetString()!;
+        await SendAsync(HttpMethod.Put, $"/api/agent/scopes/DESK/agents/{site}/take", Admin, new { roleKey = "helper" });
+        await SendAsync(HttpMethod.Put, $"/api/agent/scopes/OPS/agents/{site}/take", Admin, new { roleKey = "helper" });
+        JsonElement made = await SendAsync(HttpMethod.Post, "/api/agent/scopes/DESK/agents", Admin, new
+        {
+            key = "deskown", roleKey = "helper", instructions = """
+                demo: remember {"text":"The desk's printer jams."}
+                demo-answer: Kept.
+                """,
+        });
+        string own = made.GetProperty("id").GetString()!;
+        string ownAccount = made.GetProperty("account").GetProperty("id").GetString()!;
+
+        // At DESK: the site agent's run waits on its question; the own agent's run keeps a note; Ben's chat with it. At OPS:
+        // the site agent's run, stopped. Ben allows the site agent set_priority ahead of time at both.
+        string deskTicket = await TicketAsync(Ben, "DESK", "Jams");
+        string waiting = (await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/agent/items/ticket/{deskTicket}/runs", Ben, new { agentId = site, prompt = "Raise" })))
+            .GetProperty("id").GetString()!;
+        string noted = (await FinishedAsync(await SendAsync(HttpMethod.Post, $"/api/agent/items/ticket/{deskTicket}/runs", Ben, new { agentId = own, prompt = "Note it" })))
+            .GetProperty("id").GetString()!;
+        JsonElement chat = await SendAsync(HttpMethod.Post, "/api/agent/chats", Ben, new { agentId = own, prompt = "Note it too", kind = "ticket", key = deskTicket });
+        await FinishedAsync(chat.GetProperty("runs")[0]);
+        string opsTicket = await TicketAsync(Ben, "OPS", "Elsewhere");
+        string kept = (await WaitingAsync(await SendAsync(HttpMethod.Post, $"/api/agent/items/ticket/{opsTicket}/runs", Ben, new { agentId = site, prompt = "Raise" })))
+            .GetProperty("id").GetString()!;
+        await SendAsync(HttpMethod.Post, $"/api/agent/runs/{kept}/stop", Ben);
+        Dictionary<string, string> scopes = (await SendAsync(HttpMethod.Get, "/api/agent/me/permissions/allowable", Ben)).EnumerateArray()
+            .ToDictionary(p => p.GetProperty("scope").GetProperty("key").GetString()!, p => p.GetProperty("scope").GetProperty("id").GetString()!);
+        foreach (string scope in new[] { scopes["DESK"], scopes["OPS"] })
+        {
+            await SendAsync(HttpMethod.Post, "/api/agent/me/permissions", Ben, new { agentId = site, scopeId = scope, tools = new[] { "set_priority" } });
+        }
+
+        // Its notes are read into its graph at DESK first, so there's a graph to let go of.
+        for (int i = 0; ; i++)
+        {
+            using IServiceScope scope = _factory!.Services.CreateScope();
+            List<AgentMemory> notes = await scope.ServiceProvider.GetRequiredService<AgentsDb>().RunAsync(db => db.AgentMemories.AsNoTracking()
+                .Where(m => m.AgentId == Guid.Parse(own)).ToListAsync());
+            if (notes.Count > 0 && notes.All(n => n.GraphedAt != null))
+            {
+                break;
+            }
+
+            Assert.True(i < 150 && notes.All(n => n.GraphFailures < 5), "DESK's notes weren't read into the graph.");
+            await Task.Delay(200);
+        }
+
+        // DESK is deleted for good.
+        AgentScopeForgotten gone;
+        using (IServiceScope scope = _factory!.Services.CreateScope())
+        {
+            gone = await scope.ServiceProvider.GetRequiredService<AgentScopeForgetting>().ForgetScopeAsync(Guid.Parse(scopes["DESK"]), "DESK");
+        }
+
+        Assert.Equal((1, 1, 1, 1), (gone.Agents, gone.OfferedBy, gone.Chats, gone.Permissions));
+        Assert.Equal(2, gone.TakenOn); // the site agent's at DESK, and DESK's own agent's
+        Assert.True(gone.Runs >= 3 && gone.Questions >= 1 && gone.Memories >= 1, $"runs {gone.Runs}, questions {gone.Questions}, memories {gone.Memories}");
+        Assert.Equal(1, gone.Graphs); // DESK's own agent's graph there; the second call below finds none left
+        Assert.Equal([Guid.Parse(ownAccount)], gone.AgentAccounts);
+
+        // Nothing of DESK's is left: its own agent, its runs (the one that waited too), the chat, the permission, its place
+        // among the site agent's.
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await RawAsync(HttpMethod.Get, $"/api/agent/agents/{own}", Admin)).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await RawAsync(HttpMethod.Get, $"/api/agent/runs/{waiting}", Ben)).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await RawAsync(HttpMethod.Get, $"/api/agent/runs/{noted}", Ben)).StatusCode);
+        Assert.Equal(0, (await SendAsync(HttpMethod.Get, "/api/agent/chats", Ben)).GetArrayLength());
+        Assert.DoesNotContain((await SendAsync(HttpMethod.Get, "/api/agent/questions", Ben)).EnumerateArray(), q => q.GetProperty("runId").GetString() == waiting);
+        Assert.Equal(["OPS"], (await SendAsync(HttpMethod.Get, "/api/agent/me/permissions", Ben)).EnumerateArray().Select(p => p.GetProperty("scopeKey").GetString()));
+        JsonElement siteNow = await SendAsync(HttpMethod.Get, $"/api/agent/agents/{site}", Admin);
+        Assert.Equal(["OPS"], siteNow.GetProperty("offeredTo").EnumerateArray().Select(s => s.GetString()));
+        using (IServiceScope scope = _factory!.Services.CreateScope())
+        {
+            AgentsDb db = scope.ServiceProvider.GetRequiredService<AgentsDb>();
+            Guid desk = Guid.Parse(scopes["DESK"]);
+            Guid ownId = Guid.Parse(own);
+            Assert.Equal(0, await db.RunAsync(d => d.AgentMemories.CountAsync(m => m.ScopeId == desk || m.AgentId == ownId), requiresNew: true));
+            Assert.Equal(0, await db.RunAsync(d => d.AgentRunSteps.CountAsync(s => s.RunId == Guid.Parse(waiting) || s.RunId == Guid.Parse(noted)), requiresNew: true));
+            Assert.Equal(0, await db.RunAsync(d => d.AgentScopes.CountAsync(s => s.ScopeId == desk), requiresNew: true));
+        }
+
+        // OPS keeps its own: the site agent, taken on there, its run there with its steps.
+        Assert.Contains((await SendAsync(HttpMethod.Get, "/api/agent/scopes/OPS/agents", Admin)).EnumerateArray(),
+            a => a.GetProperty("agent").GetProperty("id").GetString() == site && a.GetProperty("roleKey").GetString() == "helper");
+        Assert.Equal("stopped", (await SendAsync(HttpMethod.Get, $"/api/agent/runs/{kept}", Ben)).GetProperty("state").GetString());
+
+        // Heard again, it lets go of nothing more.
+        using (IServiceScope scope = _factory!.Services.CreateScope())
+        {
+            Assert.True((await scope.ServiceProvider.GetRequiredService<AgentScopeForgetting>().ForgetScopeAsync(Guid.Parse(scopes["DESK"]), "DESK")).Nothing);
+        }
+    }
+
+    [Fact]
     public async Task Always_allow_in_a_run_the_system_started_is_the_agents_setting_for_whoever_may_change_it()
     {
         string agent = await SetUpAgentAsync("nightly", """

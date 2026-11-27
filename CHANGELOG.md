@@ -6,6 +6,20 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-27
+
+### Added
+
+- A scope deleted for good: `AgentScopeForgetting.ForgetScopeAsync(scopeId, key)`, for the host to call from the event
+  that says a scope is gone (a project purged). Everything agents keep of it goes: its own agents with everything of
+  theirs, the site agents it took on and its place among the scopes one is offered to, the runs there with their steps,
+  the questions and standing permissions there, the chats there with their events, the notes kept there and the agents'
+  graphs there (`IAgentMemoryGraph.ForgetScopeAsync`, which AbpAgent.Graphiti answers with graphiti-net's
+  `ClearDataAsync`). Runs going there are told to stop first. It returns `AgentScopeForgotten` (how many of each, and
+  the own agents' accounts), is audited once (`agent.scope-forgotten`), and a second call lets go of nothing more.
+- `IAgentAccounts.RetireAsync`: an agent's account whose agent is gone, for the host to turn off for good, kept so
+  history still names it. The default leaves the account as it is.
+
 ## [0.7.0] - 2026-11-27
 
 ### Added

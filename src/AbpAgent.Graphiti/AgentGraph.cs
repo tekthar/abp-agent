@@ -239,6 +239,36 @@ public sealed class AgentGraph(IServiceScopeFactory scopes, IOptions<AgentGraphO
         await graphiti.RemoveEpisodeAsync(episode, strict: true, cancellationToken: ct);
     }
 
+    /// <summary>
+    /// Every agent's graph in a scope deleted for good goes whole (its groups end with the scope): its episodes, the things
+    /// and facts read from them, and the links between. Nothing there, or no graph, lets nothing go.
+    /// </summary>
+    public async Task<int> ForgetScopeAsync(Guid scopeId, CancellationToken cancellationToken)
+    {
+        if (_graphiti is not { } graphiti)
+        {
+            return 0;
+        }
+
+        string suffix = $"-{scopeId:N}";
+        List<string> groups;
+        await using (GraphitiDbContext db = Context())
+        {
+            groups = [.. (await db.Episodes.AsNoTracking().Where(e => e.GroupId.StartsWith("agent-") && e.GroupId.EndsWith(suffix)).Select(e => e.GroupId)
+                    .Distinct().ToListAsync(cancellationToken))
+                .Union(await db.Entities.AsNoTracking().Where(e => e.GroupId.StartsWith("agent-") && e.GroupId.EndsWith(suffix)).Select(e => e.GroupId)
+                    .Distinct().ToListAsync(cancellationToken))
+                .Where(g => OfGroup(g)?.ScopeId == scopeId)];
+        }
+
+        if (groups.Count > 0)
+        {
+            await graphiti.ClearDataAsync(groups, cancellationToken);
+        }
+
+        return groups.Count;
+    }
+
     /// <summary>The graph's tables, to read.</summary>
     internal GraphitiDbContext Context() => new(_connection ?? throw new InvalidOperationException(Why), GraphOptions);
 

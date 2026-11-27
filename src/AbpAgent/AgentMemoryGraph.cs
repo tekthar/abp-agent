@@ -65,4 +65,10 @@ public interface IAgentMemoryGraph
 
     /// <summary>The graph as a reader may see it, to browse (no model calls): see <see cref="AgentGraphLook"/>.</summary>
     Task<AgentGraphView> LookAsync(AgentGraphLook look, CancellationToken cancellationToken) => Task.FromResult(AgentGraphView.Empty);
+
+    /// <summary>
+    /// Lets go of every agent's graph in a scope deleted for good (<see cref="AgentScopeForgetting"/>): how many graphs went.
+    /// The default has none to let go.
+    /// </summary>
+    Task<int> ForgetScopeAsync(Guid scopeId, CancellationToken cancellationToken) => Task.FromResult(0);
 }

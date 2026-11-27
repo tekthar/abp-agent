@@ -7,7 +7,7 @@ Each seam is an interface in `AbpAgent.Contracts`. Register yours in your module
 
 | Seam | What it answers | Default |
 |---|---|---|
-| `IAgentAccounts` | make an agent's account (no sign-in, no tokens); who people are: name, username, kind (person, service, agent), active; optionally, the account's name in other languages and renaming it when the agent is renamed | none: you must give one (the names by language and the rename have defaults: one name, kept as made) |
+| `IAgentAccounts` | make an agent's account (no sign-in, no tokens); who people are: name, username, kind (person, service, agent), active; optionally, the account's name in other languages and renaming it when the agent is renamed, and retiring the account of an agent that's gone (`RetireAsync`) | none: you must give one (the names by language and the rename have defaults: one name, kept as made; retiring leaves the account as it is) |
 | `IAgentRights` | is the actor a site admin; does the actor administer a scope | none |
 | `IAgentScopes` | a scope by key (when the actor may read it), by id, by keys; why a role can't be given; grant and take back an agent's role | none |
 | `IAgentItemKind` (one per kind) | see [items](items.md) | none |
@@ -27,6 +27,7 @@ Each seam is an interface in `AbpAgent.Contracts`. Register yours in your module
 | `AgentRunService` | runs: ask, start for a trigger (`StartAsync`), get (as the reader may see it), an item's runs, stop, ready to undo; questions: a person's open ones, answer, expire |
 | `AgentPermissionService` | standing permissions: a person's own (`MineAsync`), an agent's (`ForAgentAsync`, for whoever administers it), what a person may allow ahead of time (`AllowableAsync`) and allowing it (`GiveAsync`), and taking one or an agent's every one in a scope back (`RemoveAsync`, the person or the agent's administrators) |
 | `AgentRunner` | one turn of a run (`TurnAsync`), for your own queue; `FailAsync` when your queue gives up on one |
+| `AgentScopeForgetting` | a scope deleted for good (`ForgetScopeAsync`): everything agents keep of it goes (below) |
 
 ## Starting runs
 
@@ -61,6 +62,16 @@ on until something is set up (the site's monthly AI cost limit, say). Agents kee
 answer `IAgentItemKind.NeighboursAsync` with the items linked to one, as the actor reads, and `recall` looks near
 them too. Your host maps `agents.agent_memories` (`IAgentsDbContext.AgentMemories`); on erasing a person, call
 `AgentMemoryService.ForgetPersonAsync`.
+
+**A scope deleted for good.** When one of your scopes goes for good (a project purged, not one in a trash it can come
+back from), call `AgentScopeForgetting.ForgetScopeAsync(scopeId, key)` from the event that says so. Everything agents
+keep of it goes: the scope's own agents, with everything of theirs; the site agents it took on, and its place among the
+scopes a site agent is offered to; the runs there with their steps, the questions they asked and the standing
+permissions given there; the chats there with their events; the notes agents kept there and their graphs. Runs still
+going there are told to stop first. Each own agent's account goes to `IAgentAccounts.RetireAsync` (turn it off for
+good, keeping it so history still names it; by default it's left as it is, never signing in and holding no tokens).
+It returns what went (`AgentScopeForgotten`, with the retired accounts), writes one `agent.scope-forgotten` audit
+entry, and a second call lets go of nothing more, so an event heard twice is harmless.
 
 **Graph memory.** With the `AbpAgent.Graphiti` package (depend on `AbpAgentGraphitiModule`), each note an agent keeps
 is read after its run into a graph of the things it names and the facts between them (graphiti-net, on your PostgreSQL
