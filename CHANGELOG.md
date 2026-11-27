@@ -6,6 +6,8 @@ All notable changes to AbpAgent are written here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-27
+
 ### Added
 
 - Allowing an agent ahead of time: `AgentPermissionService.AllowableAsync` lists, by scope, the agents a person may
